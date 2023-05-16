@@ -80,37 +80,45 @@ export function encodeBitmask(iter, n) {
   return output.slice(0, Math.ceil(length / 8));
 }
 
-export function* bitToIndex(iter) {
-  let index = 0;
-  let curr = 1;
-  for (const b of iter) {
-    if (b !== curr) {
-      yield index;
-      curr = b;
-    }
-    index++;
-  }
+export function bitToIndex(iter) {
+  return {
+    *[Symbol.iterator]() {
+      let index = 0;
+      let curr = 1;
+      for (const b of iter) {
+        if (b !== curr) {
+          yield index;
+          curr = b;
+        }
+        index++;
+      }
+    },
+  };
 }
 
-export function* indexToBit(iter, n) {
-  let index = 0;
-  let curr = 1;
-  for (const i of iter) {
-    while (index < i) {
-      yield curr;
-      index++;
-    }
-    curr = 1 - curr;
-  }
-  while (index < n) {
-    yield curr;
-    index++;
-  }
+export function indexToBit(iter, n) {
+  return {
+    *[Symbol.iterator]() {
+      let index = 0;
+      let curr = 1;
+      for (const i of iter) {
+        while (index < i) {
+          yield curr;
+          index++;
+        }
+        curr = 1 - curr;
+      }
+      while (index < n) {
+        yield curr;
+        index++;
+      }
+    },
+  };
 }
 
 export function forwardMapIndexes(iter, n) {
   return {
-    *[Symbol.iterator] () {
+    *[Symbol.iterator]() {
       let ones = 0;
       let index = 0;
       let curr = 1;
@@ -139,13 +147,13 @@ export function forwardMapIndexes(iter, n) {
           index++;
         }
       }
-    }
-  }
+    },
+  };
 }
 
 export function backwardMapIndexes(iter, n) {
   return {
-    *[Symbol.iterator] () {
+    *[Symbol.iterator]() {
       let index = 0;
       let curr = 1;
       for (const i of iter) {
@@ -159,8 +167,8 @@ export function backwardMapIndexes(iter, n) {
       if (curr) {
         while (index < n) yield index++;
       }
-    }
-  }
+    },
+  };
 }
 
 export function forwardMapSingleIndex(iter, index) {
@@ -189,7 +197,7 @@ export function backwardMapSingleIndex(iter, index) {
     }
     curr = 1 - curr;
   }
-  return curr ? index + zeros: -1;
+  return curr ? index + zeros : -1;
 }
 
 function readBit(arr) {
