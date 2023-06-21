@@ -12,6 +12,7 @@ import { quicksort } from "../src/helpers/quicksort.mjs";
 
 testBitmask();
 testQuicksort();
+testQuicksortIsStable();
 
 function testBitmask() {
   const test = [6, 7, 21, 28, 30];
@@ -32,4 +33,19 @@ function testQuicksort() {
   const mapping = quicksort(test, (a, b) => b - a);
 
   console.log(test, test.map((_, i) => test[mapping[i]]));
+}
+
+function testQuicksortIsStable() {
+  const test = [
+    { a: 1, b: 1, c: 1 },
+    { a: 1, b: 2, c: 2 },
+    { a: 1, b: 1, c: 3 },
+    { a: 0, b: 1, c: 4 }
+  ];
+  const mappingA = quicksort(test, (a, b) => a.b - b.b);
+  const mappingB = quicksort(test, (a, b) => a.a - b.a, mappingA);
+  const mappingC = quicksort(test, (a, b) => a.a - b.a);
+
+  console.log(test.map((_, i) => test[mappingB[i]]));
+  console.log(test.map((_, i) => test[mappingC[i]]));
 }
