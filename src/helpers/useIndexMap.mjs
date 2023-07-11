@@ -1,5 +1,3 @@
-const INDEX_KEY = Symbol('index');
-
 let defaultMapping = new Int32Array(1);
 
 export function getDefaultIndexMap(n) {
@@ -23,30 +21,26 @@ export class WithIndexMap {
     if (Array.isArray(arr) || ArrayBuffer.isView(arr)) {
       this.get = i => arr[indexMap[i]] ?? nullValue;
     } else {
-      nullValue = nullValue === undefined ? {} : nullValue;
+      if (nullValue === undefined) nullValue = {};
+      let currentIndex;
       const el = {};
-      Object.defineProperty(el, INDEX_KEY, {
-        value: 0,
-        writable: true,
-        enumerable: false
-      });
       Object.entries(arr).forEach(([key, value]) => {
         Object.defineProperty(el, key, {
           get() {
-            return value[this[INDEX_KEY]] ?? nullValue[key];
+            return value[currentIndex] ?? nullValue[key];
           },
           enumerable: true
         });
       });
+      Object.freeze(el);
       this.get = i => {
-        el[INDEX_KEY] = indexMap[i];
+        currentIndex = indexMap[i];
         return el;
       };
     }
 
     const get = (_, prop) => {
       if (prop in this) return this[prop];
-      if (prop === 'toLocaleString') return () => 'WithIndexMap Proxy';
       return this.get(prop);
     };
     this._proxy = new Proxy(this.ref, { get });
@@ -63,7 +57,11 @@ export class WithIndexMap {
   }
 
   map(fn) {
-    const output = new this.ref.constructor(this.indexMap.length);
+    const ArrayBuilder =
+      Array.isArray(this.ref) || ArrayBuffer.isView(this.ref)
+        ? this.ref.constructor
+        : Array;
+    const output = new ArrayBuilder(this.indexMap.length);
     for (const i of this._iter) {
       output[i] = fn(this.get(i), i);
     }
@@ -236,7 +234,7 @@ export class WithIndexMap {
     rootIndexMap = rootIndexMap.subarray(0, j);
     return arrays.map(arr => {
       const indexMap = rootIndexMap.map(i => arr.indexMap[i]);
-      return new WithIndexMap(arr.ref, indexMap)
+      return new WithIndexMap(arr.ref, indexMap);
     });
   }
 }

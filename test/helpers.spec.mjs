@@ -56,6 +56,6 @@ function testQuicksortIsStable() {
 function testWithIndexMap() {
   const test = { a: [1, 2, 3], b: [4, 5, 6] };
   const original = new WithIndexMap(test);
-  const filtered = original.filter(v => v.a > 1);
-  console.log(filtered.values());
+  const filtered = original.filter(v => v.a > 1 && v.b < 6);
+  console.log(filtered.values(), filtered.map(v => ({ ...v })));
 }
