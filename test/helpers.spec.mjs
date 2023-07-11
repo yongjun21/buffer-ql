@@ -5,14 +5,15 @@ import {
   forwardMapIndexes,
   backwardMapIndexes,
   forwardMapSingleIndex,
-  backwardMapSingleIndex,
-} from "../src/helpers/bitmask.mjs";
+  backwardMapSingleIndex
+} from '../src/helpers/bitmask.mjs';
 
-import { quicksort } from "../src/helpers/quicksort.mjs";
+import { WithIndexMap } from '../src/helpers/useIndexMap.mjs';
 
 testBitmask();
 testQuicksort();
 testQuicksortIsStable();
+testWithIndexMap();
 
 function testBitmask() {
   const test = [6, 7, 21, 28, 30];
@@ -29,10 +30,11 @@ function testBitmask() {
 }
 
 function testQuicksort() {
-  const test = [86, 67, 55, 22, 11, 66, 64, 43, 93, 20, 79, 14];
-  const mapping = quicksort(test, (a, b) => b - a);
+  const test = [86, 67, 55, 22, 11, 66, 64, 43, 93, 20, 79, 14]
+  const original = new WithIndexMap(test);
+  const sorted = original.sort((a, b) => b - a);
 
-  console.log(test, test.map((_, i) => test[mapping[i]]));
+  console.log(original.values(), sorted.values());
 }
 
 function testQuicksortIsStable() {
@@ -42,10 +44,18 @@ function testQuicksortIsStable() {
     { a: 1, b: 1, c: 3 },
     { a: 0, b: 1, c: 4 }
   ];
-  const mappingA = quicksort(test, (a, b) => a.b - b.b);
-  const mappingB = quicksort(test, (a, b) => a.a - b.a, mappingA);
-  const mappingC = quicksort(test, (a, b) => a.a - b.a);
 
-  console.log(test.map((_, i) => test[mappingB[i]]));
-  console.log(test.map((_, i) => test[mappingC[i]]));
+  const original = new WithIndexMap(test);
+  const firstSort = original.sort((a, b) => a.b - b.b);
+  const secondSort = firstSort.sort((a, b) => a.a - b.a);
+  const alternativeSort = original.sort((a, b) => a.a - b.a);
+
+  console.log(secondSort.values(), alternativeSort.values());
+}
+
+function testWithIndexMap() {
+  const test = { a: [1, 2, 3], b: [4, 5, 6] };
+  const original = new WithIndexMap(test);
+  const filtered = original.filter(v => v.a > 1);
+  console.log(filtered.values());
 }
