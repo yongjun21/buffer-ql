@@ -1,0 +1,16 @@
+{
+  "name": "pandas-buffer",
+  "version": "0.0.0",
+  "description": "Data structure optimized for visualization",
+  "type": "module",
+  "main": "dist/index.mjs",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc"
+  },
+  "author": "Yong Jun",
+  "license": "MIT",
+  "devDependencies": {
+    "typescript": "^5.1.6"
+  }
+}

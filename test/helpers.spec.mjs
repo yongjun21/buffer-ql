@@ -5,10 +5,9 @@ import {
   forwardMapIndexes,
   backwardMapIndexes,
   forwardMapSingleIndex,
-  backwardMapSingleIndex
-} from '../src/helpers/bitmask.mjs';
-
-import { WithIndexMap } from '../src/helpers/useIndexMap.mjs';
+  backwardMapSingleIndex,
+  WithIndexMap
+} from '../dist/index.js';
 
 testBitmask();
 testQuicksort();
@@ -34,7 +33,7 @@ function testQuicksort() {
   const original = new WithIndexMap(test);
   const sorted = original.sort((a, b) => b - a);
 
-  console.log(original.values(), sorted.values());
+  console.log(original.copyTo(Uint8Array), sorted.copyTo(Uint8Array));
 }
 
 function testQuicksortIsStable() {
@@ -50,12 +49,12 @@ function testQuicksortIsStable() {
   const secondSort = firstSort.sort((a, b) => a.a - b.a);
   const alternativeSort = original.sort((a, b) => a.a - b.a);
 
-  console.log(secondSort.values(), alternativeSort.values());
+  console.log([...secondSort], [...alternativeSort]);
 }
 
 function testWithIndexMap() {
   const test = { a: [1, 2, 3], b: [4, 5, 6] };
   const original = new WithIndexMap(test);
   const filtered = original.filter(v => v.a > 1 && v.b < 6);
-  console.log(filtered.values(), filtered.map(v => ({ ...v })));
+  console.log([...filtered.map(v => ({ ...v }))]);
 }

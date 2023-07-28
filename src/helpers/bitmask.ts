@@ -1,11 +1,11 @@
-import { Stack } from "./common.mjs";
+import { Stack } from "./common.js";
 
 const POWER2 = new Uint32Array(32).map((_, i) => Math.pow(2, i));
 
 const decodeStackContainer = new Uint8Array(64);
 const encodeStackContainer = new Uint8Array(64);
 
-export function decodeBitmask(encoded, n) {
+export function decodeBitmask(encoded: Uint8Array, n: number) {
   return {
     *[Symbol.iterator]() {
       const depth = Math.ceil(Math.log2(n));
@@ -34,7 +34,7 @@ export function decodeBitmask(encoded, n) {
   };
 }
 
-export function encodeBitmask(iter, n) {
+export function encodeBitmask(iter: Iterable<number>, n: number) {
   const input = iter[Symbol.iterator]();
   const output = new Uint8Array(2 * n);
   const depth = Math.ceil(Math.log2(n));
@@ -80,7 +80,7 @@ export function encodeBitmask(iter, n) {
   return output.slice(0, Math.ceil(length / 8));
 }
 
-export function bitToIndex(iter) {
+export function bitToIndex(iter: Iterable<any>) {
   return {
     *[Symbol.iterator]() {
       let index = 0;
@@ -96,7 +96,7 @@ export function bitToIndex(iter) {
   };
 }
 
-export function indexToBit(iter, n) {
+export function indexToBit(iter: Iterable<number>, n: number) {
   return {
     *[Symbol.iterator]() {
       let index = 0;
@@ -116,7 +116,7 @@ export function indexToBit(iter, n) {
   };
 }
 
-export function forwardMapIndexes(iter, n) {
+export function forwardMapIndexes(iter: Iterable<number>, n: number) {
   return {
     *[Symbol.iterator]() {
       let ones = 0;
@@ -151,7 +151,7 @@ export function forwardMapIndexes(iter, n) {
   };
 }
 
-export function backwardMapIndexes(iter, n) {
+export function backwardMapIndexes(iter: Iterable<number>, n: number) {
   return {
     *[Symbol.iterator]() {
       let index = 0;
@@ -171,7 +171,7 @@ export function backwardMapIndexes(iter, n) {
   };
 }
 
-export function forwardMapSingleIndex(iter, index) {
+export function forwardMapSingleIndex(iter: Iterable<number>, index: number) {
   let zeros = 0;
   let ones = 0;
   let curr = 1;
@@ -184,7 +184,7 @@ export function forwardMapSingleIndex(iter, index) {
   return curr ? index - zeros : -1;
 }
 
-export function backwardMapSingleIndex(iter, index) {
+export function backwardMapSingleIndex(iter: Iterable<number>, index: number) {
   let zeros = 0;
   let ones = 0;
   let curr = 1;
@@ -200,7 +200,7 @@ export function backwardMapSingleIndex(iter, index) {
   return curr ? index + zeros : -1;
 }
 
-function readBit(arr) {
+function readBit(arr: Uint8Array) {
   let index = 0;
   let position = 0;
   return () => {
@@ -216,11 +216,11 @@ function readBit(arr) {
   };
 }
 
-function writeBit(arr) {
+function writeBit(arr: Uint8Array) {
   let n = 0;
   let index = 0;
   let position = 0;
-  return (v) => {
+  return (v: number) => {
     if (index >= arr.length) return n;
     const mask = POWER2[position];
     arr[index] += mask * (v ? 1 : 0);
