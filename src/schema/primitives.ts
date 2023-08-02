@@ -3,7 +3,7 @@ import type { SchemaTypeReader as Reader } from '../schema';
 
 const textDecoder = new TextDecoder();
 
-export const SCHEMA_PRIMITIVE_TYPES = [
+export const SCHEMA_BASE_TYPES = [
   {
     name: 'Uint8',
     size: 1,
@@ -43,15 +43,6 @@ export const SCHEMA_PRIMITIVE_TYPES = [
     name: 'Float64',
     size: 8,
     read: typed<Reader>((dv, offset) => dv.getFloat64(offset, true))
-  },
-  // offset + length
-  {
-    name: 'Pointer',
-    size: 8,
-    read: typed<Reader>((dv, offset) => [
-      dv.getFloat32(offset, true),
-      dv.getFloat32(offset + 4, true)
-    ])
   },
   // strings are just pointer to an UTF8 array
   {
@@ -105,10 +96,4 @@ export const SCHEMA_PRIMITIVE_TYPES = [
     size: 64,
     read: typed<Reader>((dv, offset) => new Float32Array(dv.buffer, offset, 16))
   },
-  // Bitmask is an Uint8 array
-  {
-    name: 'Bitmask',
-    size: 1,
-    read: typed<Reader>((dv, offset) => dv.getUint8(offset))
-  }
 ] as const;
