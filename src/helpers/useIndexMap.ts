@@ -1,6 +1,4 @@
-interface ArrayConstructor<T> {
-  new (length: number): { [i: number]: T };
-}
+import type { ArrayConstructor, ArrayLike, Getter } from '../types/common.d.ts';
 
 let defaultMapping = new Int32Array(1);
 
@@ -12,8 +10,7 @@ export function getDefaultIndexMap(n: number) {
   return defaultMapping.subarray(0, n);
 }
 
-type Getter<T> = (i: number) => T;
-type NamedArrays<T> = { [k in keyof T]: ArrayLike<T[k]> };
+type NamedArrays<T> = { [k in keyof T]: ArrayLike<T[k]> | Getter<T[k]> };
 
 export class WithIndexMap<T = any> {
   _get: Getter<T>;
@@ -21,12 +18,14 @@ export class WithIndexMap<T = any> {
   _iter: Int32Array;
   _proxy: ArrayLike<T>;
 
+  constructor(arr: ArrayLike<T>, indexMap?: Int32Array, nullValue?: T);
+
   constructor(
-    arr: ArrayLike<T> | NamedArrays<T>,
-    indexMap?: Int32Array,
+    arr: NamedArrays<T>,
+    indexMap: Int32Array | number,
     nullValue?: T
   );
-  
+
   constructor(getter: Getter<T>, indexMap: Int32Array | number);
 
   constructor(
@@ -41,7 +40,7 @@ export class WithIndexMap<T = any> {
           ? indexMap
           : getDefaultIndexMap(indexMap ?? 0);
     } else if (Array.isArray(getter) || ArrayBuffer.isView(getter)) {
-      const arr = getter as ArrayLike<T>;
+      const arr = getter as unknown as ArrayLike<T>;
       this._get = i => arr[i] ?? nullValue!;
       this.indexMap =
         indexMap instanceof Int32Array
@@ -52,13 +51,18 @@ export class WithIndexMap<T = any> {
       const _nullValue = nullValue || ({} as T);
       let currentIndex = 0;
       const el = {} as unknown as T;
-      Object.entries<ArrayLike<any>>(obj).forEach(([key, value]) => {
-        const nullValue = _nullValue[key as keyof T];
-        Object.defineProperty(el, key, {
-          get: () => value[currentIndex] ?? nullValue,
-          enumerable: true
-        });
-      });
+      Object.entries<ArrayLike<any> | Getter<any>>(obj).forEach(
+        ([key, value]) => {
+          const nullValue = _nullValue[key as keyof T];
+          Object.defineProperty(el, key, {
+            get:
+              typeof value === 'function'
+                ? () => value(currentIndex)
+                : () => value[currentIndex] ?? nullValue,
+            enumerable: true
+          });
+        }
+      );
       Object.freeze(el);
       this._get = i => {
         currentIndex = i;
@@ -67,7 +71,7 @@ export class WithIndexMap<T = any> {
       this.indexMap =
         indexMap instanceof Int32Array
           ? indexMap
-          : getDefaultIndexMap(getMaxLength(obj));
+          : getDefaultIndexMap(indexMap ?? 0)
     }
 
     this._iter = getDefaultIndexMap(this.indexMap.length);
@@ -257,12 +261,4 @@ export class WithIndexMap<T = any> {
       return new WithIndexMap(arr._get, indexMap);
     });
   }
-}
-
-function getMaxLength(obj: NamedArrays<any>) {
-  let max = 0;
-  Object.values(obj).forEach(v => {
-    if (v.length > max) max = v.length;
-  });
-  return max;
 }

@@ -6,8 +6,16 @@ import {
   backwardMapIndexes,
   forwardMapSingleIndex,
   backwardMapSingleIndex,
+  chainForwardIndexes,
+  chainBackwardIndexes,
+  forwardMapOneOf,
+  backwardMapOneOf,
+} from '../dist/helpers/bitmask.js';
+
+import {
+  getDefaultIndexMap,
   WithIndexMap
-} from '../dist/index.js';
+} from '../dist/helpers/useIndexMap.js';
 
 testBitmask();
 testQuicksort();
@@ -23,9 +31,13 @@ function testBitmask() {
   console.log([...indexToBit(decoded, 32)]);
   console.log([...forwardMapIndexes(decoded, 32)]);
   console.log([...backwardMapIndexes(decoded, 32)]);
-  const indexes = new Int8Array(32);
-  console.log(indexes.map((_, i) => forwardMapSingleIndex(decoded, i)));
-  console.log(indexes.map((_, i) => backwardMapSingleIndex(decoded, i)));
+  console.log([...chainForwardIndexes(forwardMapIndexes(decoded, 32), forwardMapIndexes(decoded, 32))]);
+  console.log([...chainBackwardIndexes(backwardMapIndexes(decoded, 32), backwardMapIndexes(decoded, 32))]);
+  console.log([...forwardMapOneOf(32, decoded, decoded)]);
+  console.log(backwardMapOneOf(32, decoded, decoded).map(iter => [...iter]));
+  const indexes = getDefaultIndexMap(32);
+  console.log(indexes.map(i => forwardMapSingleIndex(decoded, i)));
+  console.log(indexes.map(i => backwardMapSingleIndex(decoded, i)));
 }
 
 function testQuicksort() {
@@ -54,7 +66,7 @@ function testQuicksortIsStable() {
 
 function testWithIndexMap() {
   const test = { a: [1, 2, 3], b: [4, 5, 6] };
-  const original = new WithIndexMap(test);
+  const original = new WithIndexMap(test, 3);
   const filtered = original.filter(v => v.a > 1 && v.b < 6);
   console.log([...filtered.map(v => ({ ...v }))]);
 }

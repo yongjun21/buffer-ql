@@ -1,4 +1,6 @@
-export { getDefaultIndexMap, WithIndexMap } from './helpers/useIndexMap.js'
+export { extendSchema } from './schema/index';
+
+export { getDefaultIndexMap, WithIndexMap } from './helpers/useIndexMap'
 
 export {
   encodeBitmask,
@@ -7,5 +9,9 @@ export {
   forwardMapIndexes,
   backwardMapIndexes,
   forwardMapSingleIndex,
-  backwardMapSingleIndex
-} from './helpers/bitmask.js';
+  backwardMapSingleIndex,
+  chainForwardIndexes,
+  chainBackwardIndexes,
+  forwardMapOneOf,
+  backwardMapOneOf,
+} from './helpers/bitmask';

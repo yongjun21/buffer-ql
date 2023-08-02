@@ -1,6 +1,7 @@
-interface ArrayLike<T> {
-  length: number;
-  [n: number]: T;
+import type { ArrayLike } from '../types/common.d.ts';
+
+export function typed<T>(v: T) {
+  return v;
 }
 
 export class Stack<T = any> {
