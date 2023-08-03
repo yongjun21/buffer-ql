@@ -1,5 +1,5 @@
-import { typed } from '../helpers/common';
-import type { SchemaTypeReader as Reader } from '../schema';
+import { typed } from '../helpers/common.js';
+import type { SchemaTypeReader as Reader } from '../schema/index.js';
 
 const textDecoder = new TextDecoder();
 

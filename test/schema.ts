@@ -1,4 +1,4 @@
-import { extendSchema } from '../src/schema/index.js';
+import { extendSchema } from '../src/schema/index';
 
 export const SCHEMA = extendSchema(
   {
@@ -26,3 +26,5 @@ export const SCHEMA = extendSchema(
     ],
   }
 );
+
+console.log(SCHEMA);
