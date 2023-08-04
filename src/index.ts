@@ -14,4 +14,5 @@ export {
   chainBackwardIndexes,
   forwardMapOneOf,
   backwardMapOneOf,
+  forwardMapSingleOneOf,
 } from './helpers/bitmask';

@@ -10,6 +10,20 @@ export function getDefaultIndexMap(n: number) {
   return defaultMapping.subarray(0, n);
 }
 
+export function getIndexMapFromIterable(
+  iterable: Iterable<number>,
+  length: number,
+  Arr?: ArrayConstructor<number>
+) {
+  const indexMap = (new (Arr || Int32Array)(length)) as Int32Array;
+  let i = 0;
+  for (const index of iterable) {
+    if (i >= length) break;
+    indexMap[i++] = index;
+  }
+  return indexMap;
+}
+
 type NamedArrays<T> = { [k in keyof T]: ArrayLike<T[k]> | Getter<T[k]> };
 
 export class WithIndexMap<T = any> {
@@ -71,7 +85,7 @@ export class WithIndexMap<T = any> {
       this.indexMap =
         indexMap instanceof Int32Array
           ? indexMap
-          : getDefaultIndexMap(indexMap ?? 0)
+          : getDefaultIndexMap(indexMap ?? 0);
     }
 
     this._iter = getDefaultIndexMap(this.indexMap.length);

@@ -11,18 +11,20 @@ export interface SchemaPrimitiveType {
   read: SchemaTypeReader;
 }
 
-export interface SchemaCompoundType {
+export interface SchemaCompoundType<T extends SchemaTypeModifierName> {
+  type: T;
   size: number;
-  modifier: SchemaTypeModifierName;
   children: string[];
 }
 
 export interface SchemaTupleType {
+  type: 'Tuple';
   size: number;
   children: string[];
 }
 
-export interface SchemaNamedTupleType extends SchemaTupleType {
+export interface SchemaNamedTupleType extends Omit<SchemaTupleType, 'type'> {
+  type: 'NamedTuple';
   keyIndex: Record<string, number>;
 }
 
@@ -33,22 +35,24 @@ export type SchemaTypeExpression<T extends string> =
   | SchemaBaseTypeName
   | SchemaCompoundTypeExpression<T | SchemaBaseTypeName>;
 
-type SchemaTypeDefinition<T extends string = string> =
+export type SchemaTypeDefinition<T extends string = string> =
   | SchemaTypeExpression<T>
   | SchemaTypeExpression<T>[]
   | Record<string, SchemaTypeExpression<T>>;
+
+type SchemaType =
+  | SchemaPrimitiveType
+  | SchemaCompoundType<SchemaTypeModifierName>
+  | SchemaTupleType
+  | SchemaNamedTupleType;
+
+export type Schema = Record<string, SchemaType>;
 
 export function extendSchema<T extends string, U extends T, V extends U>(
   baseTypes: Record<V, SchemaPrimitiveType>,
   types: { [_ in T]?: SchemaTypeDefinition<U> }
 ) {
-  const schema = {} as Record<
-    string,
-    | SchemaPrimitiveType
-    | SchemaCompoundType
-    | SchemaTupleType
-    | SchemaNamedTupleType
-  >;
+  const schema: Schema = {};
   for (const record of SCHEMA_BASE_TYPES) {
     schema[record.name] = record;
   }
@@ -58,8 +62,9 @@ export function extendSchema<T extends string, U extends T, V extends U>(
     if (typeof value === 'string') {
       Object.assign(schema, parseExpression(label, value));
     } else if (Array.isArray(value!)) {
-      const record: SchemaTupleType = {
-        size: 0,
+      const record: SchemaType = {
+        type: 'Tuple',
+        size: 4,
         children: []
       };
       schema[label] = record;
@@ -68,10 +73,10 @@ export function extendSchema<T extends string, U extends T, V extends U>(
         record.children.push(_label);
         Object.assign(schema, parseExpression(_label, exp));
       });
-      record.size = record.children.length * 8;
     } else {
-      const record: SchemaNamedTupleType = {
-        size: 0,
+      const record: SchemaType = {
+        type: 'NamedTuple',
+        size: 4,
         children: [],
         keyIndex: {}
       };
@@ -82,7 +87,6 @@ export function extendSchema<T extends string, U extends T, V extends U>(
         record.keyIndex[key] = i;
         Object.assign(schema, parseExpression(_label, exp));
       });
-      record.size = record.children.length * 8;
     }
   }
   return schema;

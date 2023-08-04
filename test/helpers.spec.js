@@ -23,7 +23,7 @@ testQuicksortIsStable();
 testWithIndexMap();
 
 function testBitmask() {
-  const test = [6, 7, 21, 28, 30];
+  const test = [3, 6, 7, 21, 28];
   const encoded = encodeBitmask(test, 256);
   console.log(encoded);
   const decoded = decodeBitmask(encoded, 256);
@@ -33,7 +33,7 @@ function testBitmask() {
   console.log([...backwardMapIndexes(decoded, 32)]);
   console.log([...chainForwardIndexes(forwardMapIndexes(decoded, 32), forwardMapIndexes(decoded, 32))]);
   console.log([...chainBackwardIndexes(backwardMapIndexes(decoded, 32), backwardMapIndexes(decoded, 32))]);
-  console.log([...forwardMapOneOf(32, decoded, decoded)]);
+  console.log(forwardMapOneOf(32, decoded, decoded).map(iter => [...iter]));
   console.log(backwardMapOneOf(32, decoded, decoded).map(iter => [...iter]));
   const indexes = getDefaultIndexMap(32);
   console.log(indexes.map(i => forwardMapSingleIndex(decoded, i)));

@@ -20,7 +20,7 @@ export type SchemaCompoundTypeExpression<T extends string> =
   | Modifier<'OneOf', OneOfPair<T> | OneOfTriplet<T>>;
 
 export function parseExpression(label: string, exp: string) {
-  const parsed: Record<string, SchemaCompoundType> = {};
+  const parsed: Record<string, SchemaCompoundType<SchemaTypeModifierName>> = {};
   const tokenized: [number, string][] = [];
   const pattern = /((Array|Map|Optional|OneOf)<)|(([A-Za-z0-9_]+),?)|>/y;
   let matched: RegExpExecArray | null;
@@ -35,32 +35,32 @@ export function parseExpression(label: string, exp: string) {
   }
   interface StackItem {
     label: string;
-    type: SchemaCompoundType;
+    record: SchemaCompoundType<SchemaTypeModifierName>;
   }
   const stack: StackItem[] = [];
   let curr: StackItem | undefined;
   tokenized.forEach(([action, token]) => {
     if (action === 1) {
-      const type = {
+      const record: SchemaCompoundType<SchemaTypeModifierName> = {
+        type: token as SchemaTypeModifierName,
         size: 0,
-        modifier: token as SchemaTypeModifierName,
         children: []
       };
-      const next = { label, type };
+      const next = { label, record };
       label += "'";
-      parsed[next.label] = next.type;
+      parsed[next.label] = next.record;
 
       if (curr) stack.push(curr);
       curr = next;
     } else if (action === 0) {
-      if (curr) curr.type.children.push(token);
+      if (curr) curr.record.children.push(token);
     } else {
       if (curr) {
-        curr.type.size = getTypeSize(curr.type.modifier, curr.type.children);
+        curr.record.size = getTypeSize(curr.record.type, curr.record.children);
       }
       const top = stack.pop();
       if (top && curr) {
-        top.type.children.push(curr.label);
+        top.record.children.push(curr.label);
       }
       curr = top;
     }
@@ -75,8 +75,11 @@ function getTypeSize(modifier: SchemaTypeModifierName, children: string[]) {
     case 'Map':
       return 12; // offset to keys + offset to values + length
     case 'Optional':
-      return 20; // (offset + length) to bitmask + unpacked length + (offset + length) to packed value
+      return 16; // (offset + length) to bitmask + (offset + length) to value
     case 'OneOf':
-      return (children.length - 1) * 16 + 12; // (N - 1) x (offset + length) to bitmask + unpacked length + N x (offset + length) to packed value
+      // offset to branch0 + (offset + length) to bitmask0 +
+      // offset to branch1 + (offset + length) to bitmask1 + ...
+      // offset to branchN + unpacked length
+      return (children.length - 1) * 12 + 8;
   }
 }

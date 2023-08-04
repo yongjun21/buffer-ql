@@ -1,7 +1,5 @@
-import { typed } from '../helpers/common.js';
+import { typed, readString } from '../helpers/common.js';
 import type { SchemaTypeReader as Reader } from '../schema/index.js';
-
-const textDecoder = new TextDecoder();
 
 export const SCHEMA_BASE_TYPES = [
   {
@@ -48,16 +46,12 @@ export const SCHEMA_BASE_TYPES = [
   {
     name: 'String',
     size: 8,
-    read: typed<Reader>((dv, offset) => {
-      const _offset = dv.getFloat32(offset, true);
-      const _length = dv.getFloat32(offset + 4, true);
-      return textDecoder.decode(new Uint8Array(dv.buffer, _offset, _length));
-    })
+    read: readString
   },
   // 2 * Float32
   {
     name: 'Vector2',
-    size: 12,
+    size: 8,
     read: typed<Reader>((dv, offset) => [
       dv.getFloat32(offset, true),
       dv.getFloat32(offset + 4, true)
@@ -76,7 +70,7 @@ export const SCHEMA_BASE_TYPES = [
   // 4 * Float32
   {
     name: 'Vector4',
-    size: 12,
+    size: 16,
     read: typed<Reader>((dv, offset) => [
       dv.getFloat32(offset, true),
       dv.getFloat32(offset + 4, true),

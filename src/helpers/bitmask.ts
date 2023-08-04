@@ -1,3 +1,5 @@
+/* eslint-disable no-labels */
+
 import { Stack } from './common.js';
 
 const POWER2 = new Uint32Array(32).map((_, i) => Math.pow(2, i));
@@ -81,7 +83,7 @@ export function bitToIndex(iter: Iterable<any>) {
   return {
     *[Symbol.iterator]() {
       let index = 0;
-      let curr = 1;
+      let curr = 0;
       for (const b of iter) {
         if (b !== curr) {
           yield index;
@@ -97,7 +99,7 @@ export function indexToBit(decodedBitmask: Iterable<number>, n: number) {
   return {
     *[Symbol.iterator]() {
       let index = 0;
-      let curr = 1;
+      let curr = 0;
       for (const i of decodedBitmask) {
         while (index < i) {
           yield curr;
@@ -122,7 +124,7 @@ export function forwardMapIndexes(
     *[Symbol.iterator]() {
       let ones = 0;
       let index = 0;
-      let curr = equals;
+      let curr = 1 - equals;
       for (const i of decodedBitmask) {
         if (curr) {
           while (index < i) {
@@ -160,7 +162,7 @@ export function backwardMapIndexes(
   return {
     *[Symbol.iterator]() {
       let index = 0;
-      let curr = equals;
+      let curr = 1 - equals;
       for (const i of decodedBitmask) {
         if (curr) {
           while (index < i) yield index++;
@@ -183,7 +185,7 @@ export function forwardMapSingleIndex(
 ) {
   let zeros = 0;
   let ones = 0;
-  let curr = equals;
+  let curr = 1 - equals;
   for (const i of decodedBitmask) {
     if (curr) ones = i - zeros;
     else zeros = i - ones;
@@ -200,7 +202,7 @@ export function backwardMapSingleIndex(
 ) {
   let zeros = 0;
   let ones = 0;
-  let curr = equals;
+  let curr = 1 - equals;
   for (const i of decodedBitmask) {
     if (curr) {
       ones = i - zeros;
@@ -252,103 +254,133 @@ export function chainBackwardIndexes(
   };
 }
 
-export function forwardMapOneOf(
-  n: number,
-  bitmask0: Iterable<number>,
-  ...bitmaskK: Iterable<number>[]
-) {
-  const iter0 = indexToBit(bitmask0, n);
-  const iters = bitmaskK.map(b => indexToBit(b, n));
-  return {
+export function forwardMapOneOf(n: number, ...bitmasks: Uint8Array[]) {
+  const iters = bitmasks.map(b => indexToBit(decodeBitmask(b, n), n));
+  const forwardMaps: Iterable<number>[] = [];
+  const kMax = bitmasks.length;
+
+  forwardMaps.push({
     *[Symbol.iterator]() {
       const _iters = iters.map(iter => iter[Symbol.iterator]());
-      const indices = new Uint32Array(bitmaskK.length + 2);
-      const kMax = indices.length - 1;
-
-      for (const bit of iter0) {
-        if (bit) {
-          let yielded = false;
-          for (let k = 1; k < kMax; k++) {
-            const bit = _iters[k - 1].next().value;
-            if (!bit) {
-              yield [k, indices[k]++];
-              yielded = true;
-              break;
-            }
+      loop: while (true) {
+        for (let k = 0; k < kMax; k++) {
+          const next = _iters[k].next();
+          if (next.done) break loop;
+          if (!next.value) {
+            yield k;
+            break;
+          } else if (k >= kMax - 1) {
+            yield kMax;
           }
-          if (!yielded) yield [kMax, indices[kMax]++];
-        } else {
-          yield [0, indices[0]++];
         }
       }
     }
-  };
-}
+  });
 
-export function backwardMapOneOf(
-  n: number,
-  bitmask0: Iterable<number>,
-  ...bitmaskK: Iterable<number>[]
-) {
-  const iter0 = indexToBit(bitmask0, n);
-  const iters = bitmaskK.map(b => indexToBit(b, n));
+  for (let kn = 0; kn < kMax; kn++) {
+    forwardMaps.push({
+      *[Symbol.iterator]() {
+        const _iters = iters
+          .slice(0, kn + 1)
+          .map(iter => iter[Symbol.iterator]());
+        let index = 0;
+        loop: while (true) {
+          for (let k = 0; k <= kn; k++) {
+            const next = _iters[k].next();
+            if (next.done) break loop;
+            if (k < kn) {
+              if (!next.value) {
+                yield -1;
+                break;
+              }
+            } else {
+              yield next.value ? -1 : index++;
+            }
+          }
+        }
+      }
+    });
+  }
 
-  const indices = [];
-  const kMax = bitmaskK.length + 1;
-
-  indices.push({
+  forwardMaps.push({
     *[Symbol.iterator]() {
+      const _iters = iters.map(iter => iter[Symbol.iterator]());
       let index = 0;
-      for (const bit of iter0) {
-        if (!bit) yield index;
-        index++;
+      loop: while (true) {
+        for (let k = 0; k < kMax; k++) {
+          const next = _iters[k].next();
+          if (next.done) break loop;
+          if (k < kMax - 1) {
+            if (!next.value) {
+              yield -1;
+              break;
+            }
+          } else {
+            yield next.value ? index++ : -1;
+          }
+        }
       }
     }
-  })
+  });
 
-  for (let kn = 1; kn < kMax; kn++) {
-    indices.push({
+  return forwardMaps;
+}
+
+export function backwardMapOneOf(n: number, ...bitmasks: Uint8Array[]) {
+  const iters = bitmasks.map(b => indexToBit(decodeBitmask(b, n), n));
+  const backwardMaps: Iterable<number>[] = [];
+  const kMax = bitmasks.length;
+
+  for (let kn = 0; kn < kMax; kn++) {
+    backwardMaps.push({
       *[Symbol.iterator]() {
-        const _iters = iters.slice(0, kn).map(iter => iter[Symbol.iterator]());
+        const _iters = iters
+          .slice(0, kn + 1)
+          .map(iter => iter[Symbol.iterator]());
         let index = 0;
-        for (const bit of iter0) {
-          if (bit) {
-            let shouldYield = false;
-            for (let k = 1; k <= kn; k++) {
-              const bit = _iters[k - 1].next().value;
-              if (k === kn) shouldYield = !bit;
-              else if (!bit) break;
+        loop: while (true) {
+          for (let k = 0; k <= kn; k++) {
+            const next = _iters[k].next();
+            if (next.done) break loop;
+            if (k < kn) {
+              if (!next.value) break;
+            } else if (!next.value) {
+              yield index;
             }
-            if (shouldYield) yield index;
           }
           index++;
         }
       }
-    })
+    });
   }
 
-  indices.push({
+  backwardMaps.push({
     *[Symbol.iterator]() {
       const _iters = iters.map(iter => iter[Symbol.iterator]());
       let index = 0;
-      for (const bit of iter0) {
-        if (bit) {
-          let shouldYield = true;
-          for (let k = 1; k < kMax; k++) {
-            const bit = _iters[k - 1].next().value;
-            if (!bit) {
-              shouldYield = false;
-              break;
-            }
+      loop: while (true) {
+        for (let k = 0; k < kMax; k++) {
+          const next = _iters[k].next();
+          if (next.done) break loop;
+          if (k < kMax - 1) {
+            if (!next.value) break;
+          } else if (next.value) {
+            yield index;
           }
-          if (shouldYield) yield index;
         }
         index++;
       }
     }
   });
 
-  return indices;
+  return backwardMaps;
+}
+
+export function forwardMapSingleOneOf(
+  index: number,
+  ...bitmasks: Uint8Array[]
+) {
+  return [0, index];
 }
 
 function readBit(arr: Uint8Array) {
