@@ -1,4 +1,4 @@
-import type { ArrayLike, NestedArray } from '../types/common.d.ts';
+import type { ArrayLike } from '../types/common.d.ts';
 
 const textDecoder = new TextDecoder();
 
@@ -10,10 +10,6 @@ export function readString(dv: DataView, offset: number) {
   const _offset = dv.getFloat32(offset, true);
   const _length = dv.getFloat32(offset + 4, true);
   return textDecoder.decode(new Uint8Array(dv.buffer, _offset, _length));
-}
-
-export function getLevelNested<T = any>(arr: T | NestedArray<T>): number {
-  return Array.isArray(arr) ? 1 + getLevelNested(arr[0]) : 0;
 }
 
 export class Stack<T = any> {

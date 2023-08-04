@@ -163,7 +163,7 @@ export class WithIndexMap<T = any> {
     return false;
   }
 
-  reduce<U>(fn: (acc: U, v: T, i: number) => U, init: U) {
+  reduce<U>(fn: (acc: U | undefined, v: T, i: number) => U, init?: U) {
     return this._iter.reduce((acc, i) => fn(acc, this.get(i), i), init);
   }
 

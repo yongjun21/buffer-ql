@@ -9,7 +9,7 @@ import {
   forwardMapSingleIndex,
   chainForwardIndexes,
   forwardMapOneOf,
-  forwardMapSingleOneOf,
+  forwardMapSingleOneOf
 } from '../helpers/bitmask.js';
 import { readString } from '../helpers/common.js';
 
@@ -22,7 +22,8 @@ import type {
   SchemaTupleType,
   SchemaNamedTupleType
 } from '../schema/index.js';
-import type { NestedArray } from '../types/common.js';
+
+type NestedWithIndexMap<T> = WithIndexMap<T | WithIndexMap<T>>;
 
 export const ALL_KEYS = Symbol('ALL_KEYS');
 export const ALL_VALUES = Symbol('ALL_VALUES');
@@ -85,7 +86,13 @@ export function createReader(data: ArrayBuffer | DataView, schema: Schema) {
       return false;
     }
 
-    value<T = any>(defaultValue?: T): WithIndexMap<T> | T | undefined {
+    switchBranch(branchIndex: number) {
+      // do nothing
+    }
+
+    value<T = any>(
+      defaultValue?: T
+    ): WithIndexMap<T | undefined> | T | undefined {
       const { currentOffset, currentType, currentIndex, currentLength } = this;
       if (this.isPrimitive()) {
         const { size, read } = currentType as SchemaPrimitiveType;
@@ -137,7 +144,7 @@ export function createReader(data: ArrayBuffer | DataView, schema: Schema) {
         const { size, children, keyIndex } =
           currentType as SchemaNamedTupleType;
         if (!(key in keyIndex)) {
-          throw new KeyAccessError(`Missing key ${key.toString()}`);
+          throw new KeyAccessError(`Undefined key ${key}`);
         }
         const i = keyIndex[key];
         const nextOffset = currentOffset + i * size;
@@ -153,7 +160,10 @@ export function createReader(data: ArrayBuffer | DataView, schema: Schema) {
           nextReader = this._createArrayReader(currentIndex, key);
         } else {
           nextReader = new NestedReader(
-            [...currentIndex].map(i => this._createArrayReader(i, key))
+            new WithIndexMap(
+              i => this._createArrayReader(i, key),
+              getIndexMapFromIterable(currentIndex, currentLength)
+            )
           );
         }
       } else if (this.isMap()) {
@@ -161,7 +171,10 @@ export function createReader(data: ArrayBuffer | DataView, schema: Schema) {
           nextReader = this._createMapReader(currentIndex, key);
         } else {
           nextReader = new NestedReader(
-            [...currentIndex].map(i => this._createArrayReader(i, key))
+            new WithIndexMap(
+              i => this._createArrayReader(i, key),
+              getIndexMapFromIterable(currentIndex, currentLength)
+            )
           );
         }
       } else if (this.isOptional()) {
@@ -245,19 +258,41 @@ export function createReader(data: ArrayBuffer | DataView, schema: Schema) {
   }
 
   class NestedReader extends Reader {
-    readers: NestedArray<Reader>;
+    readers: NestedWithIndexMap<Reader>;
+    ref: Reader;
 
-    constructor(readers: NestedArray<Reader>) {
-      const ref = NestedReader._find(readers, () => true);
+    constructor(readers: NestedWithIndexMap<Reader>) {
+      const ref = NestedReader._reduce<Reader>(
+        readers,
+        (acc, reader) => acc || reader
+      );
       if (!ref) {
         throw new TraversalError('Cannot create empty NestedReader');
       }
-      super(ref.currentOffset, ref.typeName, ref.currentIndex, ref.currentLength);
+      super(
+        ref.currentOffset,
+        ref.typeName,
+        ref.currentIndex,
+        ref.currentLength
+      );
       this.readers = readers;
+      this.ref = ref;
+    }
+
+    isBranched() {
+      return this.ref.isBranched();
+    }
+
+    switchBranch(branchIndex: number) {
+      NestedReader._forEach(this.readers, reader =>
+        reader.switchBranch(branchIndex)
+      );
     }
 
     value(defaultValue?: any) {
-      return NestedReader._map(this.readers, reader => reader.value(defaultValue));
+      return NestedReader._map(this.readers, reader =>
+        reader.value(defaultValue)
+      );
     }
 
     get(key: string | number | symbol): Reader {
@@ -266,28 +301,42 @@ export function createReader(data: ArrayBuffer | DataView, schema: Schema) {
         return nextReader instanceof NestedReader
           ? nextReader.readers
           : nextReader;
-      });
+      }) as NestedWithIndexMap<Reader>;
       return new NestedReader(readers);
     }
 
-    static _map<T>(
-      arr: NestedArray<Reader>,
-      fn: (reader: Reader) => T
-    ): NestedArray<T> {
-      if (Array.isArray(arr)) {
-        return arr.map(reader => this._map(reader, fn));
-      }
-      return fn(arr);
+    static _forEach(
+      arr: NestedWithIndexMap<Reader>,
+      fn: (v: Reader, i: number) => void
+    ) {
+      arr.forEach((reader, i) => {
+        reader instanceof WithIndexMap
+          ? this._forEach(reader, fn)
+          : fn(reader, i);
+      });
     }
 
-    static _find(
-      arr: NestedArray<Reader>,
-      fn: (reader: Reader) => boolean
-    ): Reader | undefined {
-      if (Array.isArray(arr)) {
-        return arr.map(reader => this._find(reader, fn)).find(Boolean);
-      }
-      return fn(arr) ? arr : undefined;
+    static _map<T>(
+      arr: NestedWithIndexMap<Reader>,
+      fn: (v: Reader, i: number) => T
+    ): NestedWithIndexMap<T> {
+      return arr.map((reader, i) => {
+        return reader instanceof WithIndexMap
+          ? this._map(reader, fn)
+          : fn(reader, i);
+      });
+    }
+
+    static _reduce<T>(
+      arr: NestedWithIndexMap<Reader>,
+      fn: (acc: T | undefined, v: Reader | T, i: number) => T,
+      init?: T
+    ): T | undefined {
+      return arr.reduce((acc, reader, i) => {
+        return reader instanceof WithIndexMap
+          ? this._reduce(arr, fn, init)!
+          : fn(acc, reader, i);
+      }, init);
     }
   }
 
@@ -305,9 +354,7 @@ export function createReader(data: ArrayBuffer | DataView, schema: Schema) {
     );
 
     constructor(
-      ...args:
-        | [Reader]
-        | [Reader[], number, Iterable<number> | number]
+      ...args: [Reader] | [Reader[], number, Iterable<number> | number]
     ) {
       if (args[0] instanceof Reader) {
         const root = args[0];
@@ -340,11 +387,19 @@ export function createReader(data: ArrayBuffer | DataView, schema: Schema) {
         }
 
         if (typeof currentIndex === 'number') {
-          const [discriminator, nextIndex] = forwardMapSingleOneOf(currentIndex, ...bitmasks);
+          const [discriminator, nextIndex] = forwardMapSingleOneOf(
+            currentIndex,
+            ...bitmasks
+          );
           const branches = children.map((nextType, i) => {
             const nextindex = discriminator === i ? nextIndex : -1;
             const nextOffset = currentOffset + i * 12;
-            const nextReader = new Reader(nextOffset, nextType, nextindex, currentLength);
+            const nextReader = new Reader(
+              nextOffset,
+              nextType,
+              nextindex,
+              currentLength
+            );
             if (nextReader.isOptional()) return nextReader.get(NULL_VALUE);
             if (nextReader.isOneOf()) return nextReader.get(NULL_VALUE);
             return nextReader;
@@ -369,7 +424,12 @@ export function createReader(data: ArrayBuffer | DataView, schema: Schema) {
           const branches = children.map((nextType, i) => {
             const nextIndex = chainForwardIndexes(currentIndex, forwardMaps[i]);
             const nextOffset = currentOffset + i * 12;
-            const nextReader = new Reader(nextOffset, nextType, nextIndex, currentLength);
+            const nextReader = new Reader(
+              nextOffset,
+              nextType,
+              nextIndex,
+              currentLength
+            );
             if (nextReader.isOptional()) return nextReader.get(NULL_VALUE);
             if (nextReader.isOneOf()) return nextReader.get(NULL_VALUE);
             return nextReader;
@@ -388,7 +448,7 @@ export function createReader(data: ArrayBuffer | DataView, schema: Schema) {
         }
       } else {
         const [branches, currentBranch, discriminator] = args;
-        
+
         const branch = branches[currentBranch!];
         super(
           branch.currentOffset,
@@ -402,7 +462,7 @@ export function createReader(data: ArrayBuffer | DataView, schema: Schema) {
       }
     }
 
-    isBranched () {
+    isBranched() {
       return true;
     }
 
@@ -425,18 +485,17 @@ export function createReader(data: ArrayBuffer | DataView, schema: Schema) {
       );
     }
 
-    value<T = any>(defaultValue?: T): WithIndexMap<T> | T | undefined {
+    value<T = any>(
+      defaultValue?: T
+    ): WithIndexMap<T | undefined> | T | undefined {
       const { discriminator, currentLength } = this;
 
       if (typeof discriminator === 'number') {
         return this.branches[discriminator].value(defaultValue);
       } else {
-        const branchValues = this.branches.map(branch => {
-          const branchValue = branch.value(defaultValue);
-          return (branchValue instanceof WithIndexMap
-            ? branchValue._proxy
-            : branchValue) as ArrayLike<any>;
-        });
+        const branchValues = this.branches.map(
+          branch => branch.value(defaultValue) as WithIndexMap<T>
+        );
         const discriminatorValue = getIndexMapFromIterable(
           discriminator,
           currentLength,
@@ -445,7 +504,7 @@ export function createReader(data: ArrayBuffer | DataView, schema: Schema) {
         const getter = (i: number) =>
           i < 0 || i >= currentLength
             ? defaultValue
-            : branchValues[discriminatorValue[i]][i];
+            : branchValues[discriminatorValue[i]].get(i);
         return new WithIndexMap(getter, currentLength);
       }
     }
