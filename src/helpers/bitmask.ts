@@ -254,11 +254,15 @@ export function chainBackwardIndexes(
   };
 }
 
-export function forwardMapOneOf(n: number, ...bitmasks: Uint8Array[]) {
-  const iters = bitmasks.map(b => indexToBit(decodeBitmask(b, n), n));
+export function forwardMapOneOf(
+  n: number,
+  ...decodedBitmasks: Iterable<number>[]
+) {
+  const iters = decodedBitmasks.map(b => indexToBit(b, n));
   const forwardMaps: Iterable<number>[] = [];
-  const kMax = bitmasks.length;
+  const kMax = decodedBitmasks.length;
 
+  // discriminator
   forwardMaps.push({
     *[Symbol.iterator]() {
       const _iters = iters.map(iter => iter[Symbol.iterator]());
@@ -326,10 +330,13 @@ export function forwardMapOneOf(n: number, ...bitmasks: Uint8Array[]) {
   return forwardMaps;
 }
 
-export function backwardMapOneOf(n: number, ...bitmasks: Uint8Array[]) {
-  const iters = bitmasks.map(b => indexToBit(decodeBitmask(b, n), n));
+export function backwardMapOneOf(
+  n: number,
+  ...decodedBitmasks: Iterable<number>[]
+) {
+  const iters = decodedBitmasks.map(b => indexToBit(b, n));
   const backwardMaps: Iterable<number>[] = [];
-  const kMax = bitmasks.length;
+  const kMax = decodedBitmasks.length;
 
   for (let kn = 0; kn < kMax; kn++) {
     backwardMaps.push({
@@ -378,9 +385,15 @@ export function backwardMapOneOf(n: number, ...bitmasks: Uint8Array[]) {
 
 export function forwardMapSingleOneOf(
   index: number,
-  ...bitmasks: Uint8Array[]
+  ...decodedBitmasks: Iterable<number>[]
 ) {
-  return [0, index];
+  const kMax = decodedBitmasks.length;
+  for (let k = 0; k < kMax; k++) {
+    const mapped = forwardMapSingleIndex(decodedBitmasks[k], index, 0);
+    if (mapped >= 0) return [k, mapped];
+    index = forwardMapSingleIndex(decodedBitmasks[k], index, 1);
+  }
+  return [kMax, index];
 }
 
 function readBit(arr: Uint8Array) {

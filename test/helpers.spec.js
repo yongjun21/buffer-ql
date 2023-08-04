@@ -10,6 +10,7 @@ import {
   chainBackwardIndexes,
   forwardMapOneOf,
   backwardMapOneOf,
+  forwardMapSingleOneOf,
 } from '../dist/helpers/bitmask.js';
 
 import {
@@ -38,6 +39,7 @@ function testBitmask() {
   const indexes = getDefaultIndexMap(32);
   console.log(indexes.map(i => forwardMapSingleIndex(decoded, i)));
   console.log(indexes.map(i => backwardMapSingleIndex(decoded, i)));
+  console.log([...indexes].map(i => forwardMapSingleOneOf(i, decoded, decoded)));
 }
 
 function testQuicksort() {
