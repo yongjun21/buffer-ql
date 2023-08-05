@@ -11,12 +11,10 @@ import {
   forwardMapOneOf,
   backwardMapOneOf,
   forwardMapSingleOneOf,
+  backwardMapSingleOneOf
 } from '../dist/helpers/bitmask.js';
 
-import {
-  getDefaultIndexMap,
-  WithIndexMap
-} from '../dist/helpers/useIndexMap.js';
+import { WithIndexMap } from '../dist/helpers/useIndexMap.js';
 
 testBitmask();
 testQuicksort();
@@ -30,20 +28,44 @@ function testBitmask() {
   const decoded = decodeBitmask(encoded, 256);
   console.log([...decoded]);
   console.log([...indexToBit(decoded, 32)]);
-  console.log([...forwardMapIndexes(decoded, 32)]);
-  console.log([...backwardMapIndexes(decoded, 32)]);
-  console.log([...chainForwardIndexes(forwardMapIndexes(decoded, 32), forwardMapIndexes(decoded, 32))]);
-  console.log([...chainBackwardIndexes(backwardMapIndexes(decoded, 32), backwardMapIndexes(decoded, 32))]);
-  console.log(forwardMapOneOf(32, decoded, decoded).map(iter => [...iter]));
-  console.log(backwardMapOneOf(32, decoded, decoded).map(iter => [...iter]));
-  const indexes = getDefaultIndexMap(32);
-  console.log(indexes.map(i => forwardMapSingleIndex(decoded, i)));
-  console.log(indexes.map(i => backwardMapSingleIndex(decoded, i)));
-  console.log([...indexes].map(i => forwardMapSingleOneOf(i, decoded, decoded)));
+
+  const forwardIndexes = [...forwardMapIndexes(decoded, 32)];
+  const backwardIndexes = [...backwardMapIndexes(decoded, 32)];
+
+  console.log(forwardIndexes);
+  console.log(backwardIndexes);
+  console.log([...chainForwardIndexes(forwardIndexes, forwardIndexes)]);
+  console.log([...chainBackwardIndexes(backwardIndexes, backwardIndexes)]);
+
+  console.log(forwardIndexes.map((_, i) => forwardMapSingleIndex(decoded, i)));
+  console.log(
+    backwardIndexes.map((_, i) => backwardMapSingleIndex(decoded, i))
+  );
+
+  const [discriminator, ...forwardOneOf] = forwardMapOneOf(
+    32,
+    decoded,
+    decoded
+  ).map(iter => [...iter]);
+  const backwardOneOf = backwardMapOneOf(32, decoded, decoded).map(iter => [
+    ...iter
+  ]);
+  console.log(discriminator);
+  console.log(forwardOneOf);
+  console.log(backwardOneOf);
+
+  console.log(
+    discriminator.map((_, i) => forwardMapSingleOneOf(i, decoded, decoded))
+  );
+  console.log(
+    backwardOneOf.map((iter, k) =>
+      iter.map((_, i) => backwardMapSingleOneOf(k, i, decoded, decoded))
+    )
+  );
 }
 
 function testQuicksort() {
-  const test = [86, 67, 55, 22, 11, 66, 64, 43, 93, 20, 79, 14]
+  const test = [86, 67, 55, 22, 11, 66, 64, 43, 93, 20, 79, 14];
   const original = new WithIndexMap(test);
   const sorted = original.sort((a, b) => b - a);
 

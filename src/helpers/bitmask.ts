@@ -200,6 +200,7 @@ export function backwardMapSingleIndex(
   index: number,
   equals = 1
 ) {
+  if (index < 0) return -1;
   let zeros = 0;
   let ones = 0;
   let curr = 1 - equals;
@@ -394,6 +395,24 @@ export function forwardMapSingleOneOf(
     index = forwardMapSingleIndex(decodedBitmasks[k], index, 1);
   }
   return [kMax, index];
+}
+
+export function backwardMapSingleOneOf(
+  group: number,
+  index: number,
+  ...decodedBitmasks: Iterable<number>[]
+) {
+  const kMax = decodedBitmasks.length;
+  if (group === kMax) {
+    index = backwardMapSingleIndex(decodedBitmasks[kMax - 1], index, 1);
+    group--;
+  } else {
+    index = backwardMapSingleIndex(decodedBitmasks[group], index, 0);
+  }
+  for (let k = group - 1; k >= 0; k--) {
+    index = backwardMapSingleIndex(decodedBitmasks[k], index, 1);
+  }
+  return index;
 }
 
 function readBit(arr: Uint8Array) {

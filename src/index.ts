@@ -15,4 +15,5 @@ export {
   forwardMapOneOf,
   backwardMapOneOf,
   forwardMapSingleOneOf,
+  backwardMapSingleOneOf,
 } from './helpers/bitmask';
