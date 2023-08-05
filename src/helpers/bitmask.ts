@@ -4,6 +4,10 @@ import { Stack } from './common.js';
 
 const POWER2 = new Uint32Array(32).map((_, i) => Math.pow(2, i));
 
+function* alwaysZero () {
+  while (true) yield 0;
+}
+
 export function decodeBitmask(encoded: Uint8Array, n: number) {
   return {
     *[Symbol.iterator]() {
@@ -90,6 +94,52 @@ export function bitToIndex(iter: Iterable<any>) {
           curr = b;
         }
         index++;
+      }
+    }
+  };
+}
+
+export function oneOfToIndex(iter: Iterable<number>, kMax: number) {
+  const iters: Iterable<number>[] = [];
+  for (let k = 0; k < kMax - 1; k++) {
+    iters.push(bitToIndex({
+      *[Symbol.iterator]() {
+        let index = 0
+        let curr = 0;
+        for (const n of iter) {
+          if (n >= k) {
+            const b = n > k ? 1 : 0;
+            if (b !== curr) {
+              yield index;
+              curr = b;
+            }
+            index++;
+          }
+        }
+      }
+    }));
+  }
+  return iters;
+}
+
+export function indexToOneOf(n: number,
+  ...decodedBitmasks: Iterable<number>[]
+) {
+  const iters = decodedBitmasks.map(b => indexToBit(b, n));
+  iters.push(alwaysZero());
+
+  return {
+    *[Symbol.iterator]() {
+      const _iters = iters.map(iter => iter[Symbol.iterator]());
+      loop: while (true) {
+        for (let k = 0; k < iters.length; k++) {
+          const next = _iters[k].next();
+          if (next.done) break loop;
+          if (!next.value) {
+            yield k;
+            break;
+          }
+        }
       }
     }
   };
@@ -260,29 +310,10 @@ export function forwardMapOneOf(
   ...decodedBitmasks: Iterable<number>[]
 ) {
   const iters = decodedBitmasks.map(b => indexToBit(b, n));
+  iters.push(alwaysZero());
+
   const forwardMaps: Iterable<number>[] = [];
-  const kMax = decodedBitmasks.length;
-
-  // discriminator
-  forwardMaps.push({
-    *[Symbol.iterator]() {
-      const _iters = iters.map(iter => iter[Symbol.iterator]());
-      loop: while (true) {
-        for (let k = 0; k < kMax; k++) {
-          const next = _iters[k].next();
-          if (next.done) break loop;
-          if (!next.value) {
-            yield k;
-            break;
-          } else if (k >= kMax - 1) {
-            yield kMax;
-          }
-        }
-      }
-    }
-  });
-
-  for (let kn = 0; kn < kMax; kn++) {
+  for (let kn = 0; kn < iters.length; kn++) {
     forwardMaps.push({
       *[Symbol.iterator]() {
         const _iters = iters
@@ -306,28 +337,6 @@ export function forwardMapOneOf(
       }
     });
   }
-
-  forwardMaps.push({
-    *[Symbol.iterator]() {
-      const _iters = iters.map(iter => iter[Symbol.iterator]());
-      let index = 0;
-      loop: while (true) {
-        for (let k = 0; k < kMax; k++) {
-          const next = _iters[k].next();
-          if (next.done) break loop;
-          if (k < kMax - 1) {
-            if (!next.value) {
-              yield -1;
-              break;
-            }
-          } else {
-            yield next.value ? index++ : -1;
-          }
-        }
-      }
-    }
-  });
-
   return forwardMaps;
 }
 
@@ -336,10 +345,10 @@ export function backwardMapOneOf(
   ...decodedBitmasks: Iterable<number>[]
 ) {
   const iters = decodedBitmasks.map(b => indexToBit(b, n));
-  const backwardMaps: Iterable<number>[] = [];
-  const kMax = decodedBitmasks.length;
+  iters.push(alwaysZero());
 
-  for (let kn = 0; kn < kMax; kn++) {
+  const backwardMaps: Iterable<number>[] = [];
+  for (let kn = 0; kn < iters.length; kn++) {
     backwardMaps.push({
       *[Symbol.iterator]() {
         const _iters = iters
@@ -361,26 +370,6 @@ export function backwardMapOneOf(
       }
     });
   }
-
-  backwardMaps.push({
-    *[Symbol.iterator]() {
-      const _iters = iters.map(iter => iter[Symbol.iterator]());
-      let index = 0;
-      loop: while (true) {
-        for (let k = 0; k < kMax; k++) {
-          const next = _iters[k].next();
-          if (next.done) break loop;
-          if (k < kMax - 1) {
-            if (!next.value) break;
-          } else if (next.value) {
-            yield index;
-          }
-        }
-        index++;
-      }
-    }
-  });
-
   return backwardMaps;
 }
 
@@ -402,11 +391,7 @@ export function backwardMapSingleOneOf(
   index: number,
   ...decodedBitmasks: Iterable<number>[]
 ) {
-  const kMax = decodedBitmasks.length;
-  if (group === kMax) {
-    index = backwardMapSingleIndex(decodedBitmasks[kMax - 1], index, 1);
-    group--;
-  } else {
+  if (group < decodedBitmasks.length) {
     index = backwardMapSingleIndex(decodedBitmasks[group], index, 0);
   }
   for (let k = group - 1; k >= 0; k--) {

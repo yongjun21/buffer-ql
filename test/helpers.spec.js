@@ -2,6 +2,7 @@ import {
   encodeBitmask,
   decodeBitmask,
   indexToBit,
+  indexToOneOf,
   forwardMapIndexes,
   backwardMapIndexes,
   forwardMapSingleIndex,
@@ -42,25 +43,17 @@ function testBitmask() {
     backwardIndexes.map((_, i) => backwardMapSingleIndex(decoded, i))
   );
 
-  const [discriminator, ...forwardOneOf] = forwardMapOneOf(
-    32,
-    decoded,
-    decoded
-  ).map(iter => [...iter]);
-  const backwardOneOf = backwardMapOneOf(32, decoded, decoded).map(iter => [
-    ...iter
-  ]);
+  const discriminator = [...indexToOneOf(32, decoded, decoded)];
+  const forwardOneOf = forwardMapOneOf(32, decoded, decoded);
+  const backwardOneOf = backwardMapOneOf(32, decoded, decoded);
   console.log(discriminator);
-  console.log(forwardOneOf);
-  console.log(backwardOneOf);
+  console.log(forwardOneOf.map(iter => [...iter]));
+  console.log(backwardOneOf.map(iter => [...iter]));
 
   console.log(
-    discriminator.map((_, i) => forwardMapSingleOneOf(i, decoded, decoded))
-  );
-  console.log(
-    backwardOneOf.map((iter, k) =>
-      iter.map((_, i) => backwardMapSingleOneOf(k, i, decoded, decoded))
-    )
+    [...discriminator]
+      .map((_, i) => forwardMapSingleOneOf(i, decoded, decoded))
+      .map(([k, i]) => backwardMapSingleOneOf(k, i, decoded, decoded))
   );
 }
 

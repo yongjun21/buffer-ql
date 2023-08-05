@@ -8,6 +8,7 @@ import {
   forwardMapIndexes,
   forwardMapSingleIndex,
   chainForwardIndexes,
+  indexToOneOf,
   forwardMapOneOf,
   forwardMapSingleOneOf
 } from '../helpers/bitmask.js';
@@ -416,10 +417,8 @@ export function createReader(data: ArrayBuffer | DataView, schema: Schema) {
           this.currentBranch = discriminator;
           this.discriminator = discriminator;
         } else {
-          const [discriminator, ...forwardMaps] = forwardMapOneOf(
-            length,
-            ...bitmasks
-          );
+          const discriminator = indexToOneOf(length, ...bitmasks);
+          const forwardMaps = forwardMapOneOf(length, ...bitmasks);
 
           const branches = children.map((nextType, i) => {
             const nextIndex = chainForwardIndexes(currentIndex, forwardMaps[i]);
