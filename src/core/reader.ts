@@ -14,7 +14,7 @@ import {
 } from '../helpers/bitmask.js';
 import { readString } from '../helpers/common.js';
 
-import { KeyAccessError, TraversalError } from './error.js';
+import { KeyAccessError, TraversalError, TypeError } from './error.js';
 
 import type {
   Schema,
@@ -48,6 +48,9 @@ export function createReader(data: ArrayBuffer | DataView, schema: Schema) {
     ) {
       this.typeName = type;
       this.currentOffset = offset;
+      if (!(type in schema)) {
+        throw new TypeError(`Missing type definition ${type} in schema`);
+      }
       this.currentType = schema[type];
       this.currentIndex = index;
       this.currentLength = length;
@@ -83,12 +86,20 @@ export function createReader(data: ArrayBuffer | DataView, schema: Schema) {
       );
     }
 
+    isUndefined() {
+      return (
+        this.currentOffset < 0 ||
+        (typeof this.currentIndex === 'number' &&
+          (this.currentIndex < 0 || this.currentIndex >= this.currentLength))
+      );
+    }
+
     isBranched() {
       return false;
     }
 
     switchBranch(branchIndex: number) {
-      // do nothing
+      return this;
     }
 
     value<T = any>(
@@ -106,12 +117,13 @@ export function createReader(data: ArrayBuffer | DataView, schema: Schema) {
         if (typeof currentIndex === 'number') {
           return getter(currentIndex);
         } else {
-          return new WithIndexMap(
-            getter,
-            currentIndex instanceof Int32Array
-              ? currentIndex
-              : getIndexMapFromIterable(currentIndex, currentLength)
-          );
+          if (!(currentIndex instanceof Int32Array)) {
+            this.currentIndex = getIndexMapFromIterable(
+              currentIndex,
+              currentLength
+            );
+          }
+          return new WithIndexMap(getter, this.currentIndex as Int32Array);
         }
       }
     }
@@ -288,6 +300,12 @@ export function createReader(data: ArrayBuffer | DataView, schema: Schema) {
       NestedReader._forEach(this.readers, reader =>
         reader.switchBranch(branchIndex)
       );
+      this.typeName = this.ref.typeName;
+      this.currentOffset = this.ref.currentOffset;
+      this.currentIndex = this.ref.currentIndex;
+      this.currentLength = this.ref.currentLength;
+      this.currentIndex = this.ref.currentIndex;
+      return this;
     }
 
     value(defaultValue?: any) {
@@ -467,10 +485,12 @@ export function createReader(data: ArrayBuffer | DataView, schema: Schema) {
 
     switchBranch(branchIndex: number) {
       const branch = this.branches[branchIndex];
+      this.typeName = branch.typeName;
       this.currentOffset = branch.currentOffset;
       this.currentType = branch.currentType;
       this.currentIndex = branch.currentIndex;
       this.currentBranch = branchIndex;
+      return this;
     }
 
     get(key: string | number | symbol) {

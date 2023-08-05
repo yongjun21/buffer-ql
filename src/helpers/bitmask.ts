@@ -233,6 +233,7 @@ export function forwardMapSingleIndex(
   index: number,
   equals = 1
 ) {
+  if (index < 0) return -1;
   let zeros = 0;
   let ones = 0;
   let curr = 1 - equals;
@@ -250,7 +251,6 @@ export function backwardMapSingleIndex(
   index: number,
   equals = 1
 ) {
-  if (index < 0) return -1;
   let zeros = 0;
   let ones = 0;
   let curr = 1 - equals;

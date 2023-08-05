@@ -11,3 +11,10 @@ export class TraversalError extends Error {
     this.name = 'TraversalError';
   }
 }
+
+export class TypeError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'TypeError';
+  }
+}
