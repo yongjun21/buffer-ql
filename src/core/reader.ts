@@ -20,7 +20,6 @@ import type {
   Schema,
   SchemaPrimitiveType,
   SchemaCompoundType,
-  SchemaTupleType,
   SchemaNamedTupleType
 } from '../schema/index.js';
 
@@ -57,33 +56,35 @@ export function createReader(data: ArrayBuffer | DataView, schema: Schema) {
     }
 
     isPrimitive() {
-      return !('type' in this.currentType);
+      return this.currentType.type === 'Primitive';
     }
 
     isArray() {
-      return 'type' in this.currentType && this.currentType.type === 'Array';
+      return this.currentType.type === 'Array';
     }
 
     isMap() {
-      return 'type' in this.currentType && this.currentType.type === 'Map';
+      return this.currentType.type === 'Map';
     }
 
     isOptional() {
-      return 'type' in this.currentType && this.currentType.type === 'Optional';
+      return this.currentType.type === 'Optional';
     }
 
     isOneOf() {
-      return 'type' in this.currentType && this.currentType.type === 'OneOf';
+      return this.currentType.type === 'OneOf';
     }
 
     isTuple() {
-      return 'type' in this.currentType && this.currentType.type === 'Tuple';
+      return this.currentType.type === 'Tuple';
     }
 
     isNamedTuple() {
-      return (
-        'type' in this.currentType && this.currentType.type === 'NamedTuple'
-      );
+      return this.currentType.type === 'NamedTuple';
+    }
+
+    isLink() {
+      return this.currentType.type === 'Link';
     }
 
     isUndefined() {
@@ -94,37 +95,76 @@ export function createReader(data: ArrayBuffer | DataView, schema: Schema) {
       );
     }
 
-    isBranched() {
+    isBranched(): this is BranchedReader {
       return false;
     }
 
-    switchBranch(branchIndex: number) {
-      return this;
-    }
-
-    value<T = any>(
-      defaultValue?: T
-    ): WithIndexMap<T | undefined> | T | undefined {
-      const { currentOffset, currentType, currentIndex, currentLength } = this;
+    value(defaultValue?: any): any | WithIndexMap<any> {
+      const { currentOffset, currentType, currentLength } = this;
       if (this.isPrimitive()) {
         const { size, read } = currentType as SchemaPrimitiveType;
-
-        const getter = (i: number) =>
+        const getter = (_: any, i: number) =>
           i < 0 || i >= currentLength
             ? defaultValue
             : read(dataView, currentOffset + i * size);
-
-        if (typeof currentIndex === 'number') {
-          return getter(currentIndex);
-        } else {
-          if (!(currentIndex instanceof Int32Array)) {
-            this.currentIndex = getIndexMapFromIterable(
-              currentIndex,
-              currentLength
-            );
+        return this._valueWithGetter(getter);
+      } else if (this.isTuple()) {
+        const { children } = currentType as SchemaCompoundType<'Tuple'>;
+        const getter = (context: Reader) =>
+          children.map((_, k) => context.get(k).value(defaultValue));
+        return this._valueWithGetter(getter);
+      } else if (this.isNamedTuple()) {
+        const { keyIndex } = currentType as SchemaNamedTupleType;
+        const getter = (context: Reader) => {
+          const value: Record<string, any> = {};
+          for (const key in keyIndex) {
+            value[key] = context.get(key).value(defaultValue);
           }
-          return new WithIndexMap(getter, this.currentIndex as Int32Array);
-        }
+          return value;
+        };
+        return this._valueWithGetter(getter);
+      } else if (this.isArray()) {
+        const getter = (context: Reader) =>
+          context.get(ALL_VALUES).value(defaultValue);
+        return this._valueWithGetter(getter);
+      } else if (this.isMap()) {
+        const keys = this.get(ALL_KEYS).value() as WithIndexMap<string>;
+        const getter = (context: Reader) => {
+          const value: Record<string, any> = {};
+          for (const key of keys) {
+            value[key] = context.get(key).value(defaultValue);
+          }
+          return value;
+        };
+        return this._valueWithGetter(getter);
+      } else if (this.isOptional()) {
+        return this.get(NULL_VALUE).value(defaultValue);
+      } else if (this.isOneOf()) {
+        return this.get(NULL_VALUE).value(defaultValue);
+      }
+    }
+
+    _valueWithGetter(
+      getter: (context: Reader, index: number) => any
+    ): any | WithIndexMap<any> {
+      const { currentIndex, currentLength } = this;
+      if (typeof currentIndex === 'number') {
+        return getter(this, currentIndex);
+      } else {
+        const cachedIndexMap =
+          currentIndex instanceof Int32Array
+            ? currentIndex
+            : getIndexMapFromIterable(
+                currentIndex as Iterable<number>,
+                currentLength
+              );
+        const _getter = (i: number) => {
+          this.currentIndex = i;
+          const value = getter(this, i);
+          this.currentIndex = cachedIndexMap;
+          return value;
+        };
+        return new WithIndexMap(_getter, cachedIndexMap);
       }
     }
 
@@ -136,7 +176,7 @@ export function createReader(data: ArrayBuffer | DataView, schema: Schema) {
           throw new KeyAccessError('Tuple type can only be accessed by index');
         }
         const i = key;
-        const { size, children } = currentType as SchemaTupleType;
+        const { size, children } = currentType as SchemaCompoundType<'Tuple'>;
         if (i < 0 || i >= children.length) {
           throw new KeyAccessError(`Index ${i} is out of bounds`);
         }
@@ -185,7 +225,7 @@ export function createReader(data: ArrayBuffer | DataView, schema: Schema) {
         } else {
           nextReader = new NestedReader(
             new WithIndexMap(
-              i => this._createArrayReader(i, key),
+              i => this._createMapReader(i, key),
               getIndexMapFromIterable(currentIndex, currentLength)
             )
           );
@@ -255,7 +295,7 @@ export function createReader(data: ArrayBuffer | DataView, schema: Schema) {
         const nextIndex = getDefaultIndexMap(nextLength);
         return new Reader(
           k === ALL_KEYS ? offsetToKeys : offsetToValues,
-          nextType,
+          k === ALL_KEYS ? 'String' : nextType,
           nextIndex,
           nextLength
         );
@@ -297,9 +337,9 @@ export function createReader(data: ArrayBuffer | DataView, schema: Schema) {
     }
 
     switchBranch(branchIndex: number) {
-      NestedReader._forEach(this.readers, reader =>
-        reader.switchBranch(branchIndex)
-      );
+      NestedReader._forEach(this.readers, reader => {
+        if (reader.isBranched()) reader.switchBranch(branchIndex);
+      });
       this.typeName = this.ref.typeName;
       this.currentOffset = this.ref.currentOffset;
       this.currentIndex = this.ref.currentIndex;
@@ -384,20 +424,16 @@ export function createReader(data: ArrayBuffer | DataView, schema: Schema) {
         const { currentOffset, currentType, currentIndex, currentLength } =
           root;
 
-        const { children } = currentType as SchemaCompoundType<'OneOf'>;
+        const { size, children } = currentType as SchemaCompoundType<'OneOf'>;
 
-        const length = dataView.getInt32(
-          currentOffset + children.length * 12 - 8,
-          true
-        );
         const bitmasks: Uint8Array[] = [];
         for (let i = 0; i < children.length - 1; i++) {
           const bitmaskOffset = dataView.getInt32(
-            currentOffset + i * 12 + 4,
+            currentOffset + i * size + 4,
             true
           );
           const bitmaskLength = dataView.getUint32(
-            currentOffset + i * 12 + 8,
+            currentOffset + i * size + 8,
             true
           );
           bitmasks.push(
@@ -412,7 +448,7 @@ export function createReader(data: ArrayBuffer | DataView, schema: Schema) {
           );
           const branches = children.map((nextType, i) => {
             const nextindex = discriminator === i ? nextIndex : -1;
-            const nextOffset = currentOffset + i * 12;
+            const nextOffset = currentOffset + i * size;
             const nextReader = new Reader(
               nextOffset,
               nextType,
@@ -517,8 +553,7 @@ export function createReader(data: ArrayBuffer | DataView, schema: Schema) {
         );
         const discriminatorValue = getIndexMapFromIterable(
           discriminator,
-          currentLength,
-          Uint8Array
+          currentLength
         );
         const getter = (i: number) =>
           i < 0 || i >= currentLength

@@ -1,7 +1,16 @@
+import { validateTransitions } from '../helpers/stateMachine.js';
+
+import { TypeError } from '../core/error.js';
+
 import type { Modifier } from '../types/common.js';
 import type { SchemaCompoundType } from '../schema/index.js';
 
-export type SchemaTypeModifierName = 'Array' | 'Map' | 'Optional' | 'OneOf';
+export type SchemaTypeModifierName =
+  | 'Array'
+  | 'Map'
+  | 'Optional'
+  | 'OneOf'
+  | 'Link';
 
 type NestWithoutReplacement<T extends string, U extends string> = {
   [K in T]: Modifier<K, U | Modifier<Exclude<T, K>, U>>;
@@ -17,33 +26,59 @@ type OneOfTriplet<T extends string> = {
 
 export type SchemaCompoundTypeExpression<T extends string> =
   | NestWithoutReplacement<'Array' | 'Map' | 'Optional', T>
-  | Modifier<'OneOf', OneOfPair<T> | OneOfTriplet<T>>;
+  | Modifier<'OneOf', OneOfPair<T> | OneOfTriplet<T>>
+  | Modifier<'Link', `${string}/${string}`>;
 
 export function parseExpression(label: string, exp: string) {
-  const parsed: Record<string, SchemaCompoundType<SchemaTypeModifierName>> = {};
-  const tokenized: [number, string][] = [];
-  const pattern = /((Array|Map|Optional|OneOf)<)|(([A-Za-z0-9_]+),?)|>/y;
+  const VALID_TRANSITIONS = {
+    '<': ['<', '_'],
+    _: ['>', ','],
+    ',': ['<', '_'],
+    '>': ['>', ',']
+  };
+
+  type ValidState = keyof typeof VALID_TRANSITIONS;
+  type Parsed = Omit<
+    SchemaCompoundType<SchemaTypeModifierName | 'Alias'>,
+    'size'
+  >;
+
+  const parsed: Record<string, Parsed> = {};
+  const tokenized: [ValidState, string][] = [];
+  const pattern = /((Array|Map|Optional|OneOf|Link)<)|([A-Za-z0-9_/]+)|(,|>)/y;
   let matched: RegExpExecArray | null;
   while ((matched = pattern.exec(exp)) != null) {
     if (matched[1]) {
-      tokenized.push([1, matched[2]]);
+      tokenized.push(['<', matched[2]]);
     } else if (matched[3]) {
-      tokenized.push([0, matched[4]]);
+      tokenized.push(['_', matched[3]]);
     } else {
-      tokenized.push([-1, '']);
+      tokenized.push([matched[4] as ValidState, '']);
     }
   }
-  interface StackItem {
-    label: string;
-    record: SchemaCompoundType<SchemaTypeModifierName>;
+
+  if (tokenized.length === 0) {
+    throw new TypeError(`Invalid schema expression: ${exp}`);
   }
-  const stack: StackItem[] = [];
-  let curr: StackItem | undefined;
+  const transitionsValid = validateTransitions(
+    [',', ...tokenized.map(([action]) => action), ','],
+    (input, output) => VALID_TRANSITIONS[input].includes(output)
+  );
+  if (!transitionsValid) {
+    throw new TypeError(`Invalid schema expression: ${exp}`);
+  }
+
+  if (tokenized.length === 1) {
+    parsed[label] = { type: 'Alias', children: [tokenized[0][1]] };
+    return parsed;
+  }
+
+  const stack: { label: string; record: Parsed }[] = [];
+  let curr: { label: string; record: Parsed } | undefined;
   tokenized.forEach(([action, token]) => {
-    if (action === 1) {
-      const record: SchemaCompoundType<SchemaTypeModifierName> = {
+    if (action === '<') {
+      const record: Parsed = {
         type: token as SchemaTypeModifierName,
-        size: 0,
         children: []
       };
       const next = { label, record };
@@ -52,12 +87,9 @@ export function parseExpression(label: string, exp: string) {
 
       if (curr) stack.push(curr);
       curr = next;
-    } else if (action === 0) {
+    } else if (action === '_') {
       if (curr) curr.record.children.push(token);
-    } else {
-      if (curr) {
-        curr.record.size = getTypeSize(curr.record.type, curr.record.children);
-      }
+    } else if (action === '>') {
       const top = stack.pop();
       if (top && curr) {
         top.record.children.push(curr.label);
@@ -66,20 +98,4 @@ export function parseExpression(label: string, exp: string) {
     }
   });
   return parsed;
-}
-
-function getTypeSize(modifier: SchemaTypeModifierName, children: string[]) {
-  switch (modifier) {
-    case 'Array':
-      return 8; // offset + length
-    case 'Map':
-      return 12; // offset to keys + offset to values + length
-    case 'Optional':
-      return 16; // (offset + length) to bitmask + (offset + length) to value
-    case 'OneOf':
-      // offset to branch0 + (offset + length) to bitmask0 +
-      // offset to branch1 + (offset + length) to bitmask1 + ...
-      // offset to branchN + unpacked length
-      return (children.length - 1) * 12 + 8;
-  }
 }

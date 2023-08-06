@@ -1,4 +1,4 @@
-import { extendSchema } from '../src/schema/index';
+import { extendSchema } from '../src/schema/index.js';
 
 export const SCHEMA = extendSchema(
   {
@@ -24,6 +24,7 @@ export const SCHEMA = extendSchema(
       'Uint32',
       'Optional<Pose>',
     ],
+    Linked: 'Link<AnotherSchema/AnotherType>'
   }
 );
 

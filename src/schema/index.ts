@@ -11,19 +11,13 @@ export interface SchemaPrimitiveType {
   read: SchemaTypeReader;
 }
 
-export interface SchemaCompoundType<T extends SchemaTypeModifierName> {
+export interface SchemaCompoundType<T extends string> {
   type: T;
   size: number;
   children: string[];
 }
 
-export interface SchemaTupleType {
-  type: 'Tuple';
-  size: number;
-  children: string[];
-}
-
-export interface SchemaNamedTupleType extends Omit<SchemaTupleType, 'type'> {
+export interface SchemaNamedTupleType extends SchemaCompoundType<'NamedTuple'> {
   type: 'NamedTuple';
   keyIndex: Record<string, number>;
 }
@@ -41,12 +35,34 @@ export type SchemaTypeDefinition<T extends string = string> =
   | Record<string, SchemaTypeExpression<T>>;
 
 type SchemaType =
-  | SchemaPrimitiveType
-  | SchemaCompoundType<SchemaTypeModifierName>
-  | SchemaTupleType
+  | (SchemaPrimitiveType & { type: 'Primitive' })
+  | SchemaCompoundType<SchemaTypeModifierName | 'Alias' | 'Tuple'>
   | SchemaNamedTupleType;
 
 export type Schema = Record<string, SchemaType>;
+
+const SCHEMA_COMPOUND_TYPE_SIZE = {
+  // offset + length
+  Array: 8,
+  // offset to keys + offset to values + length
+  Map: 12,
+  // (offset + length) to bitmask + offset to value
+  // optional type is always forwarded
+  Optional: 0,
+  // offset to branch0 + (offset + length) to bitmask0 +
+  // offset to branch1 + (offset + length) to bitmask1 + ...
+  // offset to branchN
+  OneOf: 12,
+  // offset to value on linked data
+  // link type is always forwarded
+  Link: 0,
+  // alias type is always forwarded
+  Alias: 0,
+  // offset to values
+  Tuple: 4,
+  // offset to values
+  NamedTuple: 4
+} as const;
 
 export function extendSchema<T extends string, U extends T, V extends U>(
   baseTypes: Record<V, SchemaPrimitiveType>,
@@ -54,18 +70,35 @@ export function extendSchema<T extends string, U extends T, V extends U>(
 ) {
   const schema: Schema = {};
   for (const record of SCHEMA_BASE_TYPES) {
-    schema[record.name] = record;
+    schema[record.name] = {
+      ...record,
+      type: 'Primitive'
+    };
   }
-  Object.assign(schema, baseTypes);
+  for (const [label, record] of Object.entries<SchemaPrimitiveType>(
+    baseTypes
+  )) {
+    schema[label] = {
+      ...record,
+      type: 'Primitive'
+    };
+  }
 
   for (const [label, value] of Object.entries(types)) {
     if (typeof value === 'string') {
-      Object.assign(schema, parseExpression(label, value));
+      for (const [_label, _value] of Object.entries(
+        parseExpression(label, value)
+      )) {
+        schema[_label] = {
+          ..._value,
+          size: SCHEMA_COMPOUND_TYPE_SIZE[_value.type]
+        };
+      }
     } else if (Array.isArray(value!)) {
       const record: SchemaType = {
         type: 'Tuple',
-        size: 4,
-        children: []
+        children: [],
+        size: SCHEMA_COMPOUND_TYPE_SIZE.Tuple
       };
       schema[label] = record;
       value.forEach((exp, i) => {
@@ -76,9 +109,9 @@ export function extendSchema<T extends string, U extends T, V extends U>(
     } else {
       const record: SchemaType = {
         type: 'NamedTuple',
-        size: 4,
         children: [],
-        keyIndex: {}
+        keyIndex: {},
+        size: SCHEMA_COMPOUND_TYPE_SIZE.NamedTuple
       };
       schema[label] = record;
       Object.entries(value!).forEach(([key, exp], i) => {
@@ -89,5 +122,77 @@ export function extendSchema<T extends string, U extends T, V extends U>(
       });
     }
   }
+
+  validateSchema(schema);
+  forwardAlias(schema);
   return schema;
+}
+
+function validateSchema(schema: Schema) {
+  for (const [label, record] of Object.entries(schema)) {
+    if (record.type !== 'Primitive' && record.type !== 'Link') {
+      record.children.forEach(child => {
+        if (!schema[child]) {
+          throw new TypeError(`Missing type definition ${child} for ${label}`);
+        }
+      });
+    }
+
+    if (
+      record.type === 'Array' ||
+      record.type === 'Map' ||
+      record.type === 'Optional' ||
+      record.type === 'Link'
+    ) {
+      if (record.children.length !== 1) {
+        throw new TypeError(
+          `Modifier type ${record.type} should reference only a single child`
+        );
+      }
+    }
+    if (record.type === 'OneOf') {
+      if (record.children.length < 2) {
+        throw new TypeError(
+          `Modifier type OneOf should reference at least two children`
+        );
+      }
+      if (record.children.length > new Set(record.children).size) {
+        throw new TypeError(
+          `Modifier type OneOf should not reference duplicate children`
+        );
+      }
+    }
+
+    if (record.type === 'Optional') {
+      if (schema[record.children[0]].type === 'Optional') {
+        throw new TypeError(
+          `Modifier type Optional should not reference another Optional`
+        );
+      }
+    }
+
+    if (record.type === 'Link') {
+      const [schemaName, ...rest] = record.children[0].split('/');
+      const typeName = rest.join('/');
+      if (schemaName === '' || typeName === '') {
+        throw new TypeError(
+          `Invalid Link ${record.children[0]}. Use the pattern Link<Schema/Type> to reference a type from another schema`
+        );
+      }
+    }
+  }
+}
+
+function forwardAlias(schema: Schema, replaced = 0) {
+  if (replaced > Object.keys(schema).length) {
+    throw new TypeError('Circular alias reference detected');
+  }
+  let count = 0;
+  for (const [label, record] of Object.entries(schema)) {
+    if (record.type === 'Alias') {
+      schema[label] = schema[record.children[0]];
+      count++;
+    }
+  }
+  if (count > 0) forwardAlias(schema, replaced + count);
 }

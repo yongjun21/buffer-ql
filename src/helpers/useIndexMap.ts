@@ -13,9 +13,8 @@ export function getDefaultIndexMap(n: number) {
 export function getIndexMapFromIterable(
   iterable: Iterable<number>,
   length: number,
-  Arr?: ArrayConstructor<number>
 ) {
-  const indexMap = (new (Arr || Int32Array)(length)) as Int32Array;
+  const indexMap = new Int32Array(length);
   let i = 0;
   for (const index of iterable) {
     if (i >= length) break;
