@@ -192,7 +192,7 @@ export function createReader(data: ArrayBuffer | DataView, schema: Schema) {
     get<K extends Key>(
       key: K
     ): K extends typeof ALL_KEYS | typeof ALL_VALUES
-      ? ReaderMutiple
+      ? Reader<Multiple>
       : Reader<T> {
       const { currentOffset, currentType, currentIndex, currentLength } = this;
       let nextReader: Reader<boolean>;
@@ -300,10 +300,15 @@ export function createReader(data: ArrayBuffer | DataView, schema: Schema) {
         if (i !== ALL_VALUES) {
           throw new KeyAccessError(`Index must be a number or ALL_VALUES`);
         }
+        return new Reader(
+          nextOffset,
+          nextType,
+          getDefaultIndexMap(nextLength),
+          nextLength
+        );
+      } else {
+        return new Reader(nextOffset, nextType, i, nextLength);
       }
-      const nextIndex =
-        i === ALL_VALUES ? getDefaultIndexMap(nextLength) : (i as number);
-      return new Reader(nextOffset, nextType, nextIndex, nextLength);
     }
 
     _createMapReader(atIndex: number, k: Key): Reader<boolean> {
@@ -355,8 +360,6 @@ export function createReader(data: ArrayBuffer | DataView, schema: Schema) {
       return frozen;
     }
   }
-
-  class ReaderMutiple extends Reader<false> {}
 
   class NestedReader extends Reader<Multiple> {
     readers: NestedWithIndexMap<Reader<boolean>>;
@@ -501,9 +504,7 @@ export function createReader(data: ArrayBuffer | DataView, schema: Schema) {
     value<U = any>(defaultValue?: any) {
       const { discriminator, currentLength } = this;
       if (this.singleValue()) {
-        return this.branches[discriminator as number].value(
-          defaultValue
-        ) as U;
+        return this.branches[discriminator as number].value(defaultValue) as U;
       } else {
         const branchValues = this.branches.map(branch =>
           branch.value(defaultValue)
