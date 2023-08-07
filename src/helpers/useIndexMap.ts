@@ -1,4 +1,4 @@
-import type { ArrayConstructor, ArrayLike, Getter } from '../types/common.d.ts';
+import type { ArrayConstructor, Getter } from '../types/common.d.ts';
 
 let defaultMapping = new Int32Array(1);
 
@@ -10,20 +10,13 @@ export function getDefaultIndexMap(n: number) {
   return defaultMapping.subarray(0, n);
 }
 
-export function getIndexMapFromIterable(
-  iterable: Iterable<number>,
-  length: number,
-) {
-  const indexMap = new Int32Array(length);
-  let i = 0;
-  for (const index of iterable) {
-    if (i >= length) break;
-    indexMap[i++] = index;
-  }
-  return indexMap;
-}
+export class AsTuple<T extends any[]> {
+  data: T;
 
-type NamedArrays<T> = { [k in keyof T]: ArrayLike<T[k]> | Getter<T[k]> };
+  constructor(...data: T) {
+    this.data = data;
+  }
+}
 
 export class WithIndexMap<T = any> {
   _get: Getter<T>;
@@ -31,15 +24,21 @@ export class WithIndexMap<T = any> {
   _iter: Int32Array;
   _proxy: ArrayLike<T>;
 
-  constructor(arr: ArrayLike<T>, indexMap?: Int32Array, nullValue?: T);
-
-  constructor(
-    arr: NamedArrays<T>,
-    indexMap: Int32Array | number,
-    nullValue?: T
-  );
+  constructor(arr: T[], indexMap?: Int32Array, nullValue?: T);
 
   constructor(getter: Getter<T>, indexMap: Int32Array | number);
+
+  constructor(
+    arr: AsTuple<T extends any[] ? T : never>,
+    indexMap: Int32Array | number,
+    nullValue?: T extends any[] ? T : never
+  );
+
+  constructor(
+    arr: T extends Record<string, any> ? T : never,
+    indexMap: Int32Array | number,
+    nullValue?: T extends Record<string, any> ? T : never
+  );
 
   constructor(
     getter: any,
@@ -59,32 +58,38 @@ export class WithIndexMap<T = any> {
         indexMap instanceof Int32Array
           ? indexMap
           : getDefaultIndexMap(arr.length);
-    } else {
-      const obj = getter as NamedArrays<T>;
-      const _nullValue = nullValue || ({} as T);
-      let currentIndex = 0;
-      const el = {} as unknown as T;
-      Object.entries<ArrayLike<any> | Getter<any>>(obj).forEach(
-        ([key, value]) => {
-          const nullValue = _nullValue[key as keyof T];
-          Object.defineProperty(el, key, {
-            get:
-              typeof value === 'function'
-                ? () => value(currentIndex)
-                : () => value[currentIndex] ?? nullValue,
-            enumerable: true
-          });
-        }
-      );
-      Object.freeze(el);
-      this._get = i => {
-        currentIndex = i;
-        return el;
-      };
-      this.indexMap =
+    } else if (getter instanceof AsTuple) {
+      const tuple = getter as AsTuple<T extends any[] ? T : never>;
+      const _indexMap =
         indexMap instanceof Int32Array
           ? indexMap
           : getDefaultIndexMap(indexMap ?? 0);
+      const _nullValue = (nullValue || []) as any[];
+      const getters = tuple.data.map((value, i) => {
+        const nested = new WithIndexMap(value, _indexMap, _nullValue[i]);
+        return nested._get.bind(nested);
+      });
+      this._get = i => {
+        return getters.map(getter => getter(i)) as T;
+      };
+      this.indexMap = _indexMap;
+    } else {
+      const obj = getter as Record<string, any>;
+      const _indexMap =
+        indexMap instanceof Int32Array
+          ? indexMap
+          : getDefaultIndexMap(indexMap ?? 0);
+      const _nullValue = (nullValue || {}) as Record<string, any>;
+      const getters = Object.entries<any>(obj).map(([key, value]) => {
+        const nested = new WithIndexMap(value, _indexMap, _nullValue[key]);
+        return [key, nested._get.bind(nested)] as [string, Getter<any>];
+      });
+      this._get = i => {
+        return Object.fromEntries(
+          getters.map(([key, getter]) => [key, getter(i)])
+        ) as T;
+      };
+      this.indexMap = _indexMap;
     }
 
     this._iter = getDefaultIndexMap(this.indexMap.length);
@@ -244,7 +249,7 @@ export class WithIndexMap<T = any> {
     return new WithIndexMap(this._get, mapping.subarray(0, n));
   }
 
-  lookup(target: WithIndexMap<T> | ArrayLike<T>) {
+  lookup(target: WithIndexMap<T> | T[]) {
     const _target =
       target instanceof WithIndexMap ? target : new WithIndexMap(target);
     const targetIndexMap = this._iter.map(i => _target.indexOf(this.get(i)));

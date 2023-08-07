@@ -15,7 +15,7 @@ import {
   backwardMapSingleOneOf
 } from '../dist/helpers/bitmask.js';
 
-import { WithIndexMap } from '../dist/helpers/useIndexMap.js';
+import { WithIndexMap, AsTuple } from '../dist/helpers/useIndexMap.js';
 
 testBitmask();
 testQuicksort();
@@ -82,8 +82,11 @@ function testQuicksortIsStable() {
 }
 
 function testWithIndexMap() {
-  const test = { a: [1, 2, 3], b: [4, 5, 6] };
-  const original = new WithIndexMap(test, 3);
-  const filtered = original.filter(v => v.a > 1 && v.b < 6);
-  console.log([...filtered.map(v => ({ ...v }))]);
+  const tuple = new WithIndexMap(new AsTuple([1, 2, 3], [4, 5, 6]), 3);
+  const namedTuple = new WithIndexMap(
+    { a: [1, 2, 3], b: [4, 5, 6], c: { a: [1, 2, 3], b: [4, 5, 6] } },
+    3
+  );
+  console.log([...tuple.filter(v => v[0] > 1 && v[1] < 6)]);
+  console.log([...namedTuple.filter(v => v.a > 1 && v.b < 6)]);
 }
