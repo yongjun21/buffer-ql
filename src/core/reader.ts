@@ -1,4 +1,8 @@
-import { WithIndexMap, getDefaultIndexMap } from '../helpers/useIndexMap.js';
+import {
+  WithIndexMap,
+  tuple,
+  getDefaultIndexMap
+} from '../helpers/useIndexMap.js';
 import {
   decodeBitmask,
   forwardMapIndexes,
@@ -131,54 +135,41 @@ export function createReader(data: ArrayBuffer | DataView, schema: Schema) {
         return (
           this.singleValue()
             ? nested
-            : new WithIndexMap(
-                (i: number) => nested.map(k => k.get(i)),
-                this._freezeCurrentIndex()
-              )
+            : new WithIndexMap(tuple(...nested), currentLength)
         ) as ValueReturnType<U, T>;
       } else if (this.isNamedTuple()) {
         const { keyIndex } = currentType as SchemaNamedTupleType;
-        const nested = Object.keys(keyIndex).map(
-          key => [key, this.get(key).value(defaultValue)] as [string, any]
+        const nested = Object.fromEntries(
+          Object.keys(keyIndex).map(key => [
+            key,
+            this.get(key).value(defaultValue)
+          ])
         );
         return (
-          this.singleValue()
-            ? Object.fromEntries(nested)
-            : new WithIndexMap(
-                (i: number) =>
-                  Object.fromEntries(nested.map(([k, v]) => [k, v.get(i)])),
-                this._freezeCurrentIndex()
-              )
+          this.singleValue() ? nested : new WithIndexMap(nested, currentLength)
         ) as ValueReturnType<U, T>;
       } else if (this.isArray()) {
         const nested = this.get(ALL_VALUES).value(defaultValue);
-        return (
-          this.singleValue()
-            ? nested
-            : new WithIndexMap(
-                (i: number) => nested.get(i),
-                this._freezeCurrentIndex()
-              )
-        ) as ValueReturnType<U, T>;
+        return nested as ValueReturnType<U, T>;
       } else if (this.isMap()) {
         const nestedKeys = this.get(ALL_KEYS).value<string>();
         const nestedValues = this.get(ALL_VALUES).value(defaultValue);
         if (this.singleValue()) {
           const value: any = {};
-          let k = 0;
-          for (const key of nestedKeys) {
-            value[key as string] = nestedValues.get(k++);
-          }
+          nestedKeys.forEach((k, i) => {
+            value[k as string] = nestedValues.get(i);
+          });
           return value;
         } else {
           return new WithIndexMap((i: number) => {
+            const _nestedKeys = nestedKeys.get(i) as WithIndexMap<string>;
+            const _nestedValues = nestedValues.get(i) as WithIndexMap<any>;
             const value: any = {};
-            let k = 0;
-            for (const key of nestedKeys.get(i)) {
-              value[key] = nestedValues.get(i).get(k++);
-            }
+            _nestedKeys.forEach((k, i) => {
+              value[k] = _nestedValues.get(i);
+            });
             return value;
-          }, this._freezeCurrentIndex()) as ValueReturnType<U, T>;
+          }, currentLength) as ValueReturnType<U, T>;
         }
       } else if (this.isOptional()) {
         return this.get(NULL_VALUE).value(defaultValue);

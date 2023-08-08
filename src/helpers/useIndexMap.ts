@@ -10,12 +10,16 @@ export function getDefaultIndexMap(n: number) {
   return defaultMapping.subarray(0, n);
 }
 
-export class AsTuple<T extends any[]> {
+class Tuple<T extends any[]> {
   data: T;
 
   constructor(...data: T) {
     this.data = data;
   }
+}
+
+export function tuple<T extends any[]> (...data: T) {
+  return new Tuple(...data);
 }
 
 export class WithIndexMap<T = any> {
@@ -26,10 +30,12 @@ export class WithIndexMap<T = any> {
 
   constructor(arr: T[], indexMap?: Int32Array, nullValue?: T);
 
+  constructor(arr: WithIndexMap<T>, indexMap?: Int32Array);
+
   constructor(getter: Getter<T>, indexMap: Int32Array | number);
 
   constructor(
-    arr: AsTuple<T extends any[] ? T : never>,
+    arr: Tuple<T extends any[] ? T : never>,
     indexMap: Int32Array | number,
     nullValue?: T extends any[] ? T : never
   );
@@ -42,7 +48,7 @@ export class WithIndexMap<T = any> {
 
   constructor(
     getter: any,
-    indexMap: Int32Array | number | undefined,
+    indexMap?: Int32Array | number,
     nullValue?: T
   ) {
     if (typeof getter === 'function') {
@@ -51,15 +57,22 @@ export class WithIndexMap<T = any> {
         indexMap instanceof Int32Array
           ? indexMap
           : getDefaultIndexMap(indexMap ?? 0);
+    } else if (getter instanceof WithIndexMap) {
+      const parentIndexMap = getter.indexMap;
+      this._get = getter._get;
+      this.indexMap =
+        indexMap && indexMap instanceof Int32Array
+          ? indexMap.map(i => parentIndexMap[i])
+          : parentIndexMap;
     } else if (Array.isArray(getter) || ArrayBuffer.isView(getter)) {
-      const arr = getter as unknown as ArrayLike<T>;
+      const arr = getter as ArrayLike<T>;
       this._get = i => arr[i] ?? nullValue!;
       this.indexMap =
-        indexMap instanceof Int32Array
+        indexMap && indexMap instanceof Int32Array
           ? indexMap
           : getDefaultIndexMap(arr.length);
-    } else if (getter instanceof AsTuple) {
-      const tuple = getter as AsTuple<T extends any[] ? T : never>;
+    } else if (getter instanceof Tuple) {
+      const tuple = getter as Tuple<T extends any[] ? T : never>;
       const _indexMap =
         indexMap instanceof Int32Array
           ? indexMap
@@ -67,7 +80,7 @@ export class WithIndexMap<T = any> {
       const _nullValue = (nullValue || []) as any[];
       const getters = tuple.data.map((value, i) => {
         const nested = new WithIndexMap(value, _indexMap, _nullValue[i]);
-        return nested._get.bind(nested);
+        return nested._get;
       });
       this._get = i => {
         return getters.map(getter => getter(i)) as T;
@@ -82,7 +95,7 @@ export class WithIndexMap<T = any> {
       const _nullValue = (nullValue || {}) as Record<string, any>;
       const getters = Object.entries<any>(obj).map(([key, value]) => {
         const nested = new WithIndexMap(value, _indexMap, _nullValue[key]);
-        return [key, nested._get.bind(nested)] as [string, Getter<any>];
+        return [key, nested._get] as [string, Getter<any>];
       });
       this._get = i => {
         return Object.fromEntries(
