@@ -43,7 +43,9 @@ type Key = string | number | symbol;
 export function createReader(data: ArrayBuffer | DataView, schema: Schema) {
   const dataView = data instanceof DataView ? data : new DataView(data);
 
-  class Reader<T extends boolean> {
+  let timesGetCalled = 0;
+
+  class Reader<T extends boolean = Single> {
     typeName: string;
     currentOffset: number;
     currentType: Schema[string];
@@ -175,6 +177,22 @@ export function createReader(data: ArrayBuffer | DataView, schema: Schema) {
         return this.get(NULL_VALUE).value(defaultValue);
       } else if (this.isOneOf()) {
         return this.get(NULL_VALUE).value(defaultValue);
+      } else if (this.isLink()) {
+        const { children, size } = currentType as SchemaCompoundType<'Link'>;
+        const [schemaKey] = children[0].split('/');
+        if (schemaKey in linkReaders) {
+          return this.get(NULL_VALUE).value(defaultValue);
+        } else {
+          const getter = (i: number) =>
+            i < 0 || i >= currentLength
+              ? -1
+              : dataView.getInt32(currentOffset + i * size, true);
+          return (
+            this.singleValue()
+              ? getter(this.currentIndex)
+              : new WithIndexMap(getter, this._freezeCurrentIndex())
+          ) as ValueReturnType<U, T>;
+        }
       } else {
         throw new TraversalError(`Cannot get value of type ${this.typeName}`);
       }
@@ -185,98 +203,122 @@ export function createReader(data: ArrayBuffer | DataView, schema: Schema) {
     ): K extends typeof ALL_KEYS | typeof ALL_VALUES
       ? Reader<Multiple>
       : Reader<T> {
-      const { currentOffset, currentType, currentIndex, currentLength } = this;
-      let nextReader: Reader<boolean>;
-      if (this.isTuple()) {
-        if (typeof key !== 'number') {
-          throw new KeyAccessError('Tuple type can only be accessed by index');
-        }
-        const i = key;
-        const { size, children } = currentType as SchemaCompoundType<'Tuple'>;
-        if (i < 0 || i >= children.length) {
-          throw new KeyAccessError(`Index ${i} is out of bounds`);
-        }
-        const nextOffset = currentOffset + i * size;
-        const nextType = children[i];
-        nextReader = new Reader(
-          nextOffset,
-          nextType,
-          currentIndex,
-          currentLength
-        );
-      } else if (this.isNamedTuple()) {
-        if (typeof key !== 'string') {
-          throw new KeyAccessError(
-            'Named tuple type can only be accessed by key'
-          );
-        }
-        const { size, children, keyIndex } =
-          currentType as SchemaNamedTupleType;
-        if (!(key in keyIndex)) {
-          throw new KeyAccessError(`Undefined key ${key}`);
-        }
-        const i = keyIndex[key];
-        const nextOffset = currentOffset + i * size;
-        const nextType = children[i];
-        nextReader = new Reader(
-          nextOffset,
-          nextType,
-          currentIndex,
-          currentLength
-        );
-      } else if (this.isArray()) {
-        if (typeof currentIndex === 'number') {
-          nextReader = this._createArrayReader(currentIndex, key);
-        } else {
-          nextReader = new NestedReader(
-            new WithIndexMap(
-              i => this._createArrayReader(i, key),
-              this._freezeCurrentIndex()
-            )
-          );
-        }
-      } else if (this.isMap()) {
-        if (typeof currentIndex === 'number') {
-          nextReader = this._createMapReader(currentIndex, key);
-        } else {
-          nextReader = new NestedReader(
-            new WithIndexMap(
-              i => this._createMapReader(i, key),
-              this._freezeCurrentIndex()
-            )
-          );
-        }
-      } else if (this.isOptional()) {
-        const {
-          children: [nextType]
-        } = currentType as SchemaCompoundType<'Optional'>;
-        const bitmaskOffset = dataView.getInt32(currentOffset, true);
-        const bitmaskLength = dataView.getUint32(currentOffset + 4, true);
-        const nextOffset = dataView.getInt32(currentOffset + 8, true);
-        const bitmask = decodeBitmask(
-          new Uint8Array(dataView.buffer, bitmaskOffset, bitmaskLength),
-          currentLength
-        );
-        const nextIndex = this.singleValue()
-          ? forwardMapSingleIndex(bitmask, this.currentIndex)
-          : chainForwardIndexes(
-              this.currentIndex as Iterable<number>,
-              forwardMapIndexes(bitmask, currentLength)
+      timesGetCalled++;
+      try {
+        const { currentOffset, currentType, currentIndex, currentLength } =
+          this;
+        let nextReader: Reader<boolean>;
+        if (this.isTuple()) {
+          if (typeof key !== 'number') {
+            throw new KeyAccessError(
+              'Tuple type can only be accessed by index'
             );
-        nextReader = new Reader<boolean>(
-          nextOffset,
-          nextType,
-          nextIndex,
-          currentLength
-        );
-      } else if (this.isOneOf()) {
-        return BranchedReader.from(this) as Reader<boolean>;
-      } else {
-        throw new TraversalError('Primitive types cannot be traversed further');
+          }
+          const i = key;
+          const { size, children } = currentType as SchemaCompoundType<'Tuple'>;
+          if (i < 0 || i >= children.length) {
+            throw new KeyAccessError(`Index ${i} is out of bounds`);
+          }
+          const nextOffset = currentOffset + i * size;
+          const nextType = children[i];
+          nextReader = new Reader(
+            nextOffset,
+            nextType,
+            currentIndex,
+            currentLength
+          );
+        } else if (this.isNamedTuple()) {
+          if (typeof key !== 'string') {
+            throw new KeyAccessError(
+              'Named tuple type can only be accessed by key'
+            );
+          }
+          const { size, children, keyIndex } =
+            currentType as SchemaNamedTupleType;
+          if (!(key in keyIndex)) {
+            throw new KeyAccessError(`Undefined key ${key}`);
+          }
+          const i = keyIndex[key];
+          const nextOffset = currentOffset + i * size;
+          const nextType = children[i];
+          nextReader = new Reader(
+            nextOffset,
+            nextType,
+            currentIndex,
+            currentLength
+          );
+        } else if (this.isArray()) {
+          if (this.singleValue()) {
+            nextReader = this._createArrayReader(this.currentIndex, key);
+          } else {
+            nextReader = new NestedReader(
+              new WithIndexMap(
+                i => this._createArrayReader(i, key),
+                this._freezeCurrentIndex()
+              )
+            );
+          }
+        } else if (this.isMap()) {
+          if (this.singleValue()) {
+            nextReader = this._createMapReader(this.currentIndex, key);
+          } else {
+            nextReader = new NestedReader(
+              new WithIndexMap(
+                i => this._createMapReader(i, key),
+                this._freezeCurrentIndex()
+              )
+            );
+          }
+        } else if (this.isOptional()) {
+          const {
+            children: [nextType]
+          } = currentType as SchemaCompoundType<'Optional'>;
+          const bitmaskOffset = dataView.getInt32(currentOffset, true);
+          const bitmaskLength = dataView.getUint32(currentOffset + 4, true);
+          const nextOffset = dataView.getInt32(currentOffset + 8, true);
+          const bitmask = decodeBitmask(
+            new Uint8Array(dataView.buffer, bitmaskOffset, bitmaskLength),
+            currentLength
+          );
+          const nextIndex = this.singleValue()
+            ? forwardMapSingleIndex(bitmask, this.currentIndex)
+            : chainForwardIndexes(
+                this.currentIndex as Iterable<number>,
+                forwardMapIndexes(bitmask, currentLength)
+              );
+          nextReader = new Reader<boolean>(
+            nextOffset,
+            nextType,
+            nextIndex,
+            currentLength
+          );
+        } else if (this.isOneOf()) {
+          return BranchedReader.from(this) as Reader<boolean>;
+        } else if (this.isLink()) {
+          if (this.singleValue()) {
+            nextReader = this._createLinkReader(this.currentIndex);
+          } else {
+            nextReader = new NestedReader(
+              new WithIndexMap(
+                i => this._createLinkReader(i),
+                this._freezeCurrentIndex()
+              )
+            );
+          }
+        } else {
+          throw new TraversalError(
+            'Primitive types cannot be traversed further'
+          );
+        }
+        if (nextReader.isOptional()) return nextReader.get(NULL_VALUE);
+        if (nextReader.isOneOf()) return nextReader.get(NULL_VALUE);
+        if (nextReader.isLink()) return nextReader.get(NULL_VALUE);
+        timesGetCalled--;
+        return nextReader;
+      } catch (e) {
+        timesGetCalled = 0;
+        throw e;
       }
-      if (nextReader.isOptional()) return nextReader.get(NULL_VALUE);
-      if (nextReader.isOneOf()) return nextReader.get(NULL_VALUE);
-      return nextReader;
     }
 
     _createArrayReader(atIndex: number, i: Key): Reader<boolean> {
@@ -334,6 +376,27 @@ export function createReader(data: ArrayBuffer | DataView, schema: Schema) {
       }
     }
 
+    _createLinkReader(atIndex: number): Reader<boolean> {
+      const { currentOffset, currentType, currentLength } = this;
+      const { children, size } = currentType as SchemaCompoundType<'Link'>;
+      const [schemaKey, typeName] = children[0].split('/');
+      const nextOffset = dataView.getInt32(
+        currentOffset + atIndex * size,
+        true
+      );
+
+      if (schemaKey in linkedReaders) {
+        const LinkedReader = linkedReaders[schemaKey];
+        return new LinkedReader(nextOffset, typeName, atIndex, currentLength);
+      } else {
+        if (timesGetCalled > 1) {
+          return this as Reader<boolean>;
+        } else {
+          throw new TraversalError(`Reader not found for link ${children}`);
+        }
+      }
+    }
+
     _freezeCurrentIndex() {
       if (this.singleValue()) {
         throw new TraversalError(
@@ -350,6 +413,10 @@ export function createReader(data: ArrayBuffer | DataView, schema: Schema) {
       this.currentIndex = frozen as Iterable<number> as IndexType<T>;
       return frozen;
     }
+
+    static addLink(schema: string, LinkedReader: typeof Reader) {
+      linkedReaders[schema] = LinkedReader;
+    }
   }
 
   class NestedReader extends Reader<Multiple> {
@@ -357,9 +424,10 @@ export function createReader(data: ArrayBuffer | DataView, schema: Schema) {
     ref: Reader<boolean>;
 
     constructor(readers: NestedWithIndexMap<Reader<boolean>>) {
-      const ref = NestedReader._reduce<Reader<boolean>>(
+      const ref = NestedReader._reduce<Reader<boolean> | undefined>(
         readers,
-        (acc, reader) => acc || reader
+        (acc, getReader) => acc || getReader(),
+        undefined
       );
       if (!ref) {
         throw new TraversalError('Cannot create empty NestedReader');
@@ -434,13 +502,20 @@ export function createReader(data: ArrayBuffer | DataView, schema: Schema) {
 
     static _reduce<U = any>(
       arr: NestedWithIndexMap<Reader<boolean>>,
-      fn: (acc: U | undefined, v: Reader<boolean> | U, i: number) => U,
-      init?: U
-    ): U | undefined {
-      return arr.reduce((acc, reader, i) => {
-        return reader instanceof WithIndexMap
-          ? this._reduce(arr, fn, init)!
-          : fn(acc, reader, i);
+      fn: (acc: U, v: () => U | Reader<boolean>, i: number) => U,
+      init: U
+    ): U {
+      return arr.lazyReduce((acc, getReader, i) => {
+        return fn(
+          acc,
+          () => {
+            const reader = getReader();
+            return reader instanceof WithIndexMap
+              ? this._reduce(reader, fn, init)
+              : reader;
+          },
+          i
+        );
       }, init);
     }
   }
@@ -581,5 +656,19 @@ export function createReader(data: ArrayBuffer | DataView, schema: Schema) {
     }
   }
 
+  const linkedReaders: Record<string, typeof Reader> = {};
   return Reader;
+}
+
+type Reader = ReturnType<typeof createReader>;
+
+export function linkReaders(Readers: Record<string, Reader>) {
+  const schemaKeys = Object.keys(Readers);
+  schemaKeys.forEach(keyA => {
+    schemaKeys.forEach(keyB => {
+      if (keyA === keyB) return;
+      Readers[keyA].addLink(keyB, Readers[keyB]);
+      Readers[keyB].addLink(keyA, Readers[keyA]);
+    });
+  });
 }

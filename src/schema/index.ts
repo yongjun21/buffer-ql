@@ -54,8 +54,7 @@ const SCHEMA_COMPOUND_TYPE_SIZE = {
   // offset to branchN
   OneOf: 12,
   // offset to value on linked data
-  // link type is always forwarded
-  Link: 0,
+  Link: 4,
   // alias type is always forwarded
   Alias: 0,
   // offset to values
@@ -176,7 +175,7 @@ function validateSchema(schema: Schema) {
       const typeName = rest.join('/');
       if (schemaName === '' || typeName === '') {
         throw new TypeError(
-          `Invalid Link ${record.children[0]}. Use the pattern Link<Schema/Type> to reference a type from another schema`
+          `Invalid Link ${record.children[0]}. Use the pattern Link<SchemaKey/TypeName> to reference a type from another schema`
         );
       }
     }

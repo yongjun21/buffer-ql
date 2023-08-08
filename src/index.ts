@@ -1,6 +1,6 @@
 export { extendSchema } from './schema/index';
 
-export { getDefaultIndexMap, WithIndexMap, AsTuple } from './helpers/useIndexMap'
+export { getDefaultIndexMap, tuple, WithIndexMap } from './helpers/useIndexMap'
 
 export {
   encodeBitmask,

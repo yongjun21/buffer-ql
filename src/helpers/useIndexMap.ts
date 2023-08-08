@@ -93,14 +93,16 @@ export class WithIndexMap<T = any> {
           ? indexMap
           : getDefaultIndexMap(indexMap ?? 0);
       const _nullValue = (nullValue || {}) as Record<string, any>;
-      const getters = Object.entries<any>(obj).map(([key, value]) => {
+      const getters = Object.entries(obj).map(([key, value]) => {
         const nested = new WithIndexMap(value, _indexMap, _nullValue[key]);
         return [key, nested._get] as [string, Getter<any>];
       });
       this._get = i => {
-        return Object.fromEntries(
-          getters.map(([key, getter]) => [key, getter(i)])
-        ) as T;
+        const value: Record<string, any> = {};
+        for (const [key, getter] of getters) {
+          value[key] = getter(i);
+        }
+        return value as T;
       };
       this.indexMap = _indexMap;
     }
@@ -180,8 +182,17 @@ export class WithIndexMap<T = any> {
     return false;
   }
 
-  reduce<U>(fn: (acc: U | undefined, v: T, i: number) => U, init?: U) {
+  reduce<U>(fn: (acc: U, v: T, i: number) => U, init: U) {
     return this._iter.reduce((acc, i) => fn(acc, this.get(i), i), init);
+  }
+
+  lazyReduce<U>(fn: (acc: U, v: () => T, i: number) => U, init: U) {
+    let currIndex = 0;
+    const get = () => this.get(currIndex);
+    return this._iter.reduce((acc, i) => {
+      currIndex = i;
+      return fn(acc, get, i);
+    }, init);
   }
 
   reduceRight<U>(fn: (acc: U, v: T, i: number) => U, init: U) {
