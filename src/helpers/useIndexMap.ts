@@ -1,4 +1,4 @@
-import type { ArrayConstructor, Getter } from '../types/common.d.ts';
+import type { ArrayLike, ArrayConstructor, Getter } from '../types/common.d.ts';
 
 let defaultMapping = new Int32Array(1);
 
@@ -18,7 +18,7 @@ class Tuple<T extends any[]> {
   }
 }
 
-export function tuple<T extends any[]> (...data: T) {
+export function tuple<T extends any[]>(...data: T) {
   return new Tuple(...data);
 }
 
@@ -28,7 +28,7 @@ export class WithIndexMap<T = any> {
   _iter: Int32Array;
   _proxy: ArrayLike<T>;
 
-  constructor(arr: T[], indexMap?: Int32Array, nullValue?: T);
+  constructor(arr: ArrayLike<T>, indexMap?: Int32Array, nullValue?: T);
 
   constructor(arr: WithIndexMap<T>, indexMap?: Int32Array);
 
@@ -46,11 +46,7 @@ export class WithIndexMap<T = any> {
     nullValue?: T extends Record<string, any> ? T : never
   );
 
-  constructor(
-    getter: any,
-    indexMap?: Int32Array | number,
-    nullValue?: T
-  ) {
+  constructor(getter: any, indexMap?: Int32Array | number, nullValue?: T) {
     if (typeof getter === 'function') {
       this._get = getter;
       this.indexMap =
@@ -138,9 +134,9 @@ export class WithIndexMap<T = any> {
     return this._iter.forEach(i => fn(this.get(i), i));
   }
 
-  map(fn: (v: T, i: number) => any) {
+  map<U = any>(fn: (v: T, i: number) => any) {
     const { _get, indexMap } = this;
-    return new WithIndexMap(i => fn(_get(indexMap[i]), i), indexMap.length);
+    return new WithIndexMap<U>(i => fn(_get(indexMap[i]), i), indexMap.length);
   }
 
   every(fn: (v: T, i: number) => any) {
@@ -197,6 +193,15 @@ export class WithIndexMap<T = any> {
 
   reduceRight<U>(fn: (acc: U, v: T, i: number) => U, init: U) {
     return this._iter.reduceRight((acc, i) => fn(acc, this.get(i), i), init);
+  }
+
+  lazyReduceRight<U>(fn: (acc: U, v: () => T, i: number) => U, init: U) {
+    let currIndex = 0;
+    const get = () => this.get(currIndex);
+    return this._iter.reduceRight((acc, i) => {
+      currIndex = i;
+      return fn(acc, get, i);
+    }, init);
   }
 
   reverse() {
@@ -273,11 +278,11 @@ export class WithIndexMap<T = any> {
     return new WithIndexMap(this._get, mapping.subarray(0, n));
   }
 
-  lookup(target: WithIndexMap<T> | T[]) {
-    const _target =
-      target instanceof WithIndexMap ? target : new WithIndexMap(target);
-    const targetIndexMap = this._iter.map(i => _target.indexOf(this.get(i)));
-    return new WithIndexMap(_target._get, targetIndexMap);
+  match<U>(target: WithIndexMap<U>, matchFn: (a: T, b: U) => boolean) {
+    const targetIndexMap = this._iter.map(i =>
+      target.findIndex(v => matchFn(this.get(i), v))
+    );
+    return new WithIndexMap(target._get, targetIndexMap);
   }
 
   get proxy() {

@@ -29,22 +29,23 @@ export type SchemaCompoundTypeExpression<T extends string> =
   | Modifier<'OneOf', OneOfPair<T> | OneOfTriplet<T>>
   | Modifier<'Link', `${string}/${string}`>;
 
-export function parseExpression(label: string, exp: string) {
-  const VALID_TRANSITIONS = {
-    '<': ['<', '_'],
-    _: ['>', ','],
-    ',': ['<', '_'],
-    '>': ['>', ',']
-  };
+const VALID_TRANSITIONS = {
+  '<': ['<', '_'],
+  _: ['>', ','],
+  ',': ['<', '_'],
+  '>': ['>', ',']
+};
+type TokenState = keyof typeof VALID_TRANSITIONS;
 
-  type ValidState = keyof typeof VALID_TRANSITIONS;
+export function parseExpression(label: string, exp: string) {
+
   type Parsed = Omit<
     SchemaCompoundType<SchemaTypeModifierName | 'Alias'>,
     'size'
   >;
 
   const parsed: Record<string, Parsed> = {};
-  const tokenized: [ValidState, string][] = [];
+  const tokenized: [TokenState, string][] = [];
   const pattern = /((Array|Map|Optional|OneOf|Link)<)|([A-Za-z0-9_/]+)|(,|>)/y;
   let matched: RegExpExecArray | null;
   while ((matched = pattern.exec(exp)) != null) {
@@ -53,18 +54,11 @@ export function parseExpression(label: string, exp: string) {
     } else if (matched[3]) {
       tokenized.push(['_', matched[3]]);
     } else {
-      tokenized.push([matched[4] as ValidState, '']);
+      tokenized.push([matched[4] as TokenState, '']);
     }
   }
 
-  if (tokenized.length === 0) {
-    throw new TypeError(`Invalid schema expression: ${exp}`);
-  }
-  const transitionsValid = validateTransitions(
-    [',', ...tokenized.map(([action]) => action), ','],
-    (input, output) => VALID_TRANSITIONS[input].includes(output)
-  );
-  if (!transitionsValid) {
+  if (!validateExpression(tokenized.map(([action]) => action))) {
     throw new TypeError(`Invalid schema expression: ${exp}`);
   }
 
@@ -98,4 +92,24 @@ export function parseExpression(label: string, exp: string) {
     }
   });
   return parsed;
+}
+
+function validateExpression(stateTransition: TokenState[]) {
+  const transitionsValid = validateTransitions(
+    [',', ...stateTransition, ','],
+    (input, output) => VALID_TRANSITIONS[input].includes(output)
+  )
+  if (!transitionsValid) return false;
+
+  let level = 0;
+  for (const action of stateTransition) {
+    if (action === '<') {
+      level++;
+    } else if (action === '>') {
+      level--;
+    } else if (action === ',') {
+      if (level < 1) return false;
+    }
+  }
+  return level === 0;
 }
