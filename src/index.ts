@@ -1,6 +1,8 @@
-export { extendSchema } from './schema/index';
+export { createReader, linkReaders, Reader } from './core/reader';
 
-export { getDefaultIndexMap, tuple, WithIndexMap } from './helpers/useIndexMap'
+export { getDefaultIndexMap, tuple, LazyArray, NestedLazyArray } from './core/LazyArray'
+
+export { extendSchema } from './schema/index';
 
 export {
   encodeBitmask,

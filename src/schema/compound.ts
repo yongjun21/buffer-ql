@@ -10,6 +10,7 @@ export type SchemaTypeModifierName =
   | 'Map'
   | 'Optional'
   | 'OneOf'
+  | 'Ref'
   | 'Link';
 
 type NestWithoutReplacement<T extends string, U extends string> = {
@@ -27,6 +28,7 @@ type OneOfTriplet<T extends string> = {
 export type SchemaCompoundTypeExpression<T extends string> =
   | NestWithoutReplacement<'Array' | 'Map' | 'Optional', T>
   | Modifier<'OneOf', OneOfPair<T> | OneOfTriplet<T>>
+  | Modifier<'Ref', T>
   | Modifier<'Link', `${string}/${string}`>;
 
 const VALID_TRANSITIONS = {

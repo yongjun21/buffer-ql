@@ -1,4 +1,4 @@
-import { WithIndexMap, getDefaultIndexMap } from '../helpers/useIndexMap.js';
+import { LazyArray, getDefaultIndexMap, NestedLazyArray } from './LazyArray.js';
 import {
   decodeBitmask,
   forwardMapIndexes,
@@ -19,8 +19,6 @@ import type {
   SchemaNamedTupleType
 } from '../schema/index.js';
 
-type NestedWithIndexMap<T> = WithIndexMap<T | WithIndexMap<T>>;
-
 type Single = true;
 type Multiple = false;
 type IndexType<T extends boolean> = T extends Single
@@ -28,7 +26,9 @@ type IndexType<T extends boolean> = T extends Single
   : Iterable<number>;
 type ValueReturnType<U, T extends boolean> = T extends Single
   ? U
-  : NestedWithIndexMap<U>;
+  : NestedLazyArray<U>;
+
+const MAX_INT32 = 2 ** 31 - 1;
 
 export const ALL_KEYS = Symbol('ALL_KEYS');
 export const ALL_VALUES = Symbol('ALL_VALUES');
@@ -98,6 +98,10 @@ export function createReader(data: ArrayBuffer | DataView, schema: Schema) {
       return this.currentType.type === 'NamedTuple';
     }
 
+    isRef() {
+      return this.currentType.type === 'Ref';
+    }
+
     isLink() {
       return this.currentType.type === 'Link';
     }
@@ -106,11 +110,11 @@ export function createReader(data: ArrayBuffer | DataView, schema: Schema) {
       return typeof this.currentIndex === 'number';
     }
 
-    isUndefined() {
+    isUndefined(atIndex: number | Iterable<number> = this.currentIndex) {
       return (
         this.currentOffset < 0 ||
-        (typeof this.currentIndex === 'number' &&
-          (this.currentIndex < 0 || this.currentIndex >= this.currentLength))
+        (typeof atIndex === 'number' &&
+          (atIndex < 0 || atIndex >= this.currentLength))
       );
     }
 
@@ -122,10 +126,7 @@ export function createReader(data: ArrayBuffer | DataView, schema: Schema) {
       return (
         this.singleValue()
           ? this._valueAt(this.currentIndex)
-          : new WithIndexMap<U>(
-              i => this._valueAt(i),
-              this._freezeCurrentIndex()
-            )
+          : new LazyArray<U>(i => this._valueAt(i), this._freezeCurrentIndex())
       ) as ValueReturnType<U, T>;
     }
 
@@ -142,9 +143,6 @@ export function createReader(data: ArrayBuffer | DataView, schema: Schema) {
         const [currentReader, parent, key] = currentStack.pop()!;
         currentReader._value(parent, key, currentStack);
       }
-      if (root.length === 0) {
-        throw new TraversalError(`Fail to retrieve value for ${typeName}`);
-      }
       return root[0];
     }
 
@@ -154,8 +152,8 @@ export function createReader(data: ArrayBuffer | DataView, schema: Schema) {
       currentStack: ValueCallStack<Reader<boolean>>
     ): void {
       if (!this.singleValue()) return;
-      const { currentType, currentOffset, currentIndex, currentLength } = this;
-      if (currentIndex < 0 || currentIndex >= currentLength) return;
+      const { currentType, currentOffset, currentIndex } = this;
+      if (this.isUndefined()) return;
       if (this.isPrimitive()) {
         const { size, read } = currentType as SchemaPrimitiveType;
         parent[key] = read(dataView, currentOffset + currentIndex * size);
@@ -178,7 +176,7 @@ export function createReader(data: ArrayBuffer | DataView, schema: Schema) {
       } else if (this.isMap()) {
         const childKeys = this.get(
           ALL_KEYS
-        ).value<string>() as WithIndexMap<string>;
+        ).value<string>() as LazyArray<string>;
         parent[key] = {};
         for (let k = childKeys.length - 1; k >= 0; k--) {
           currentStack.push([this.get(k), parent[key], childKeys.get(k)]);
@@ -186,6 +184,8 @@ export function createReader(data: ArrayBuffer | DataView, schema: Schema) {
       } else if (this.isOptional()) {
         currentStack.push([this.get(NULL_VALUE), parent, key]);
       } else if (this.isOneOf()) {
+        currentStack.push([this.get(NULL_VALUE), parent, key]);
+      } else if (this.isRef()) {
         currentStack.push([this.get(NULL_VALUE), parent, key]);
       } else if (this.isLink()) {
         const { children, size } = currentType as SchemaCompoundType<'Link'>;
@@ -197,7 +197,17 @@ export function createReader(data: ArrayBuffer | DataView, schema: Schema) {
             currentOffset + currentIndex * size,
             true
           );
-          parent[key] = [schemaKey, nextType, nextOffset];
+          const nextIndex = dataView.getInt32(
+            currentOffset + currentIndex * size,
+            true
+          );
+          parent[key] = {
+            is: 'Link',
+            schema: schemaKey,
+            type: nextType,
+            offset: nextOffset,
+            atIndex: nextIndex
+          };
         }
       }
     }
@@ -251,7 +261,7 @@ export function createReader(data: ArrayBuffer | DataView, schema: Schema) {
           nextReader = this._createArrayReader(this.currentIndex, key);
         } else {
           nextReader = new NestedReader(
-            new WithIndexMap(
+            new LazyArray(
               i => this._createArrayReader(i, key),
               this._freezeCurrentIndex()
             )
@@ -262,7 +272,7 @@ export function createReader(data: ArrayBuffer | DataView, schema: Schema) {
           nextReader = this._createMapReader(this.currentIndex, key);
         } else {
           nextReader = new NestedReader(
-            new WithIndexMap(
+            new LazyArray(
               i => this._createMapReader(i, key),
               this._freezeCurrentIndex()
             )
@@ -293,12 +303,23 @@ export function createReader(data: ArrayBuffer | DataView, schema: Schema) {
         );
       } else if (this.isOneOf()) {
         return BranchedReader.from(this) as Reader<boolean>;
+      } else if (this.isRef()) {
+        if (this.singleValue()) {
+          nextReader = this._createRefReader(this.currentIndex);
+        } else {
+          nextReader = new NestedReader(
+            new LazyArray(
+              i => this._createRefReader(i),
+              this._freezeCurrentIndex()
+            )
+          );
+        }
       } else if (this.isLink()) {
         if (this.singleValue()) {
           nextReader = this._createLinkReader(this.currentIndex);
         } else {
           nextReader = new NestedReader(
-            new WithIndexMap(
+            new LazyArray(
               i => this._createLinkReader(i),
               this._freezeCurrentIndex()
             )
@@ -316,37 +337,39 @@ export function createReader(data: ArrayBuffer | DataView, schema: Schema) {
     }
 
     _createArrayReader(atIndex: number, i: Key): Reader<boolean> {
+      const { currentType, currentOffset } = this;
       const {
         size,
         children: [nextType]
-      } = this.currentType as SchemaCompoundType<'Array'>;
-      const offset = this.currentOffset + atIndex * size;
-      const nextOffset = dataView.getInt32(offset, true);
-      const nextLength = dataView.getInt32(offset + 4, true);
+      } = currentType as SchemaCompoundType<'Array'>;
+      const isUndefined = this.isUndefined(atIndex);
+      const offset = currentOffset + atIndex * size;
+      const nextOffset = isUndefined ? -1 : dataView.getInt32(offset, true);
+      const nextLength = isUndefined ? 0 : dataView.getInt32(offset + 4, true);
       if (typeof i !== 'number') {
         if (i !== ALL_VALUES) {
           throw new KeyAccessError(`Index must be a number or ALL_VALUES`);
         }
-        return new Reader(
-          nextType,
-          nextOffset,
-          getDefaultIndexMap(nextLength),
-          nextLength
-        );
+        const nextIndex = getDefaultIndexMap(nextLength);
+        return new Reader(nextType, nextOffset, nextIndex, nextLength);
       } else {
         return new Reader(nextType, nextOffset, i, nextLength);
       }
     }
 
     _createMapReader(atIndex: number, k: Key): Reader<boolean> {
+      const { currentType, currentOffset } = this;
       const {
         size,
         children: [nextType]
-      } = this.currentType as SchemaCompoundType<'Array'>;
-      const offset = this.currentOffset + atIndex * size;
-      const offsetToKeys = dataView.getInt32(offset, true);
-      const offsetToValues = dataView.getInt32(offset + 4, true);
-      const nextLength = dataView.getInt32(offset + 8, true);
+      } = currentType as SchemaCompoundType<'Array'>;
+      const isUndefined = this.isUndefined(atIndex);
+      const offset = currentOffset + atIndex * size;
+      const offsetToKeys = isUndefined ? -1 : dataView.getInt32(offset, true);
+      const offsetToValues = isUndefined
+        ? -1
+        : dataView.getInt32(offset + 4, true);
+      const nextLength = isUndefined ? 0 : dataView.getInt32(offset + 8, true);
       if (typeof k !== 'string') {
         if (k !== ALL_VALUES && k !== ALL_KEYS) {
           throw new KeyAccessError(
@@ -370,18 +393,33 @@ export function createReader(data: ArrayBuffer | DataView, schema: Schema) {
       }
     }
 
+    _createRefReader(atIndex: number): Reader<boolean> {
+      const { currentOffset, currentType } = this;
+      const {
+        size,
+        children: [nextType]
+      } = currentType as SchemaCompoundType<'Ref'>;
+      const isUndefined = this.isUndefined(atIndex);
+      const offset = currentOffset + atIndex * size;
+      const nextOffset = isUndefined ? -1 : dataView.getInt32(offset, true);
+      const nextIndex = isUndefined ? -1 : dataView.getInt32(offset + 4, true);
+      const nextLength = isUndefined ? 0 : MAX_INT32;
+      return new Reader(nextType, nextOffset, nextIndex, nextLength);
+    }
+
     _createLinkReader(atIndex: number): Reader<boolean> {
-      const { currentOffset, currentType, currentLength } = this;
-      const { children, size } = currentType as SchemaCompoundType<'Link'>;
+      const { currentOffset, currentType } = this;
+      const { size, children } = currentType as SchemaCompoundType<'Link'>;
       const [schemaKey, nextType] = children[0].split('/');
-      const nextOffset = dataView.getInt32(
-        currentOffset + atIndex * size,
-        true
-      );
+      const isUndefined = this.isUndefined(atIndex);
+      const offset = currentOffset + atIndex * size;
+      const nextOffset = isUndefined ? -1 : dataView.getInt32(offset, true);
+      const nextIndex = isUndefined ? -1 : dataView.getInt32(offset + 4, true);
+      const nextLength = isUndefined ? 0 : MAX_INT32;
 
       if (schemaKey in linkedReaders) {
         const LinkedReader = linkedReaders[schemaKey];
-        return new LinkedReader(nextType, nextOffset, atIndex, currentLength);
+        return new LinkedReader(nextType, nextOffset, nextIndex, nextLength);
       } else {
         if (getCalledInternally) {
           return this as Reader<boolean>;
@@ -414,14 +452,14 @@ export function createReader(data: ArrayBuffer | DataView, schema: Schema) {
   }
 
   class NestedReader extends Reader<Multiple> {
-    readers: NestedWithIndexMap<Reader<boolean>>;
+    readers: NestedLazyArray<Reader<boolean>>;
     ref: Reader<boolean>;
 
-    constructor(readers: NestedWithIndexMap<Reader<boolean>>) {
-      const ref = NestedReader._reduce<Reader<boolean> | undefined>(
+    constructor(readers: NestedLazyArray<Reader<boolean>>) {
+      const ref = LazyArray.nestedReduce(
         readers,
         (acc, getReader) => acc || getReader(),
-        undefined
+        undefined as Reader<boolean> | undefined
       );
       if (!ref) {
         throw new TraversalError('Cannot create empty NestedReader');
@@ -445,7 +483,8 @@ export function createReader(data: ArrayBuffer | DataView, schema: Schema) {
     }
 
     switchBranch(branchIndex: number) {
-      NestedReader._forEach(this.readers, reader => {
+      if (!this.isBranched()) return this;
+      LazyArray.nestedForEach(this.readers, reader => {
         if (reader.isBranched()) reader.switchBranch(branchIndex);
       });
       this.typeName = this.ref.typeName;
@@ -454,63 +493,19 @@ export function createReader(data: ArrayBuffer | DataView, schema: Schema) {
     }
 
     value<U = any>(defaultValue?: any) {
-      return NestedReader._map(this.readers, reader =>
+      return LazyArray.nestedMap(this.readers, reader =>
         reader.value()
       ) as ValueReturnType<U, Multiple>;
     }
 
     get<K extends Key>(key: K): Reader<boolean> {
-      const readers = NestedReader._map<Reader<boolean>>(
-        this.readers,
-        reader => {
-          const nextReader = reader.get(key);
-          return (
-            nextReader instanceof NestedReader ? nextReader.readers : nextReader
-          ) as Reader<boolean>;
-        }
-      );
+      const readers = LazyArray.nestedMap(this.readers, reader => {
+        const nextReader = reader.get(key);
+        return (
+          nextReader instanceof NestedReader ? nextReader.readers : nextReader
+        ) as Reader<boolean>;
+      });
       return new NestedReader(readers);
-    }
-
-    static _forEach(
-      arr: NestedWithIndexMap<Reader<boolean>>,
-      fn: (v: Reader<boolean>, i: number) => void
-    ) {
-      arr.forEach((reader, i) => {
-        reader instanceof WithIndexMap
-          ? this._forEach(reader, fn)
-          : fn(reader, i);
-      });
-    }
-
-    static _map<U = any>(
-      arr: NestedWithIndexMap<Reader<boolean>>,
-      fn: (v: Reader<boolean>, i: number) => U
-    ): NestedWithIndexMap<U> {
-      return arr.map((reader, i) => {
-        return reader instanceof WithIndexMap
-          ? this._map(reader, fn)
-          : fn(reader, i);
-      });
-    }
-
-    static _reduce<U = any>(
-      arr: NestedWithIndexMap<Reader<boolean>>,
-      fn: (acc: U, v: () => U | Reader<boolean>, i: number) => U,
-      init: U
-    ): U {
-      return arr.lazyReduce((acc, getReader, i) => {
-        return fn(
-          acc,
-          () => {
-            const reader = getReader();
-            return reader instanceof WithIndexMap
-              ? this._reduce(reader, fn, init)
-              : reader;
-          },
-          i
-        );
-      }, init);
     }
   }
 
@@ -565,9 +560,8 @@ export function createReader(data: ArrayBuffer | DataView, schema: Schema) {
       const { currentLength } = this;
       const branchValues = this.branches.map(branch => branch.value());
       const discriminatorValue = this._freezeDiscriminator();
-      const getter = (i: number) =>
-        branchValues[discriminatorValue[i]].get(i);
-      return new WithIndexMap<U>(getter, currentLength);
+      const getter = (i: number) => branchValues[discriminatorValue[i]].get(i);
+      return new LazyArray<U>(getter, currentLength);
     }
 
     _freezeDiscriminator() {
@@ -648,7 +642,7 @@ export function createReader(data: ArrayBuffer | DataView, schema: Schema) {
   return Reader;
 }
 
-type Reader = ReturnType<typeof createReader>;
+export type Reader = ReturnType<typeof createReader>;
 
 export function linkReaders(Readers: Record<string, Reader>) {
   const schemaKeys = Object.keys(Readers);

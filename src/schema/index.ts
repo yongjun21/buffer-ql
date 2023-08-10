@@ -53,8 +53,10 @@ const SCHEMA_COMPOUND_TYPE_SIZE = {
   // offset to branch1 + (offset + length) to bitmask1 + ...
   // offset to branchN
   OneOf: 12,
-  // offset to value on linked data
-  Link: 4,
+  // offset to value + at index
+  Ref: 8,
+  // offset to value on linked data + at index
+  Link: 8,
   // alias type is always forwarded
   Alias: 0,
   // offset to values
@@ -141,6 +143,7 @@ function validateSchema(schema: Schema) {
       record.type === 'Array' ||
       record.type === 'Map' ||
       record.type === 'Optional' ||
+      record.type === 'Ref' ||
       record.type === 'Link'
     ) {
       if (record.children.length !== 1) {

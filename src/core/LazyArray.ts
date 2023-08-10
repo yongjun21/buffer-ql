@@ -1,4 +1,4 @@
-import type { ArrayLike, ArrayConstructor, Getter } from '../types/common.d.ts';
+import type { ArrayLike, ArrayConstructor, Getter } from '../types/common.js';
 
 let defaultMapping = new Int32Array(1);
 
@@ -22,7 +22,7 @@ export function tuple<T extends any[]>(...data: T) {
   return new Tuple(...data);
 }
 
-export class WithIndexMap<T = any> {
+export class LazyArray<T = any> {
   _get: Getter<T>;
   indexMap: Int32Array;
   _iter: Int32Array;
@@ -30,7 +30,7 @@ export class WithIndexMap<T = any> {
 
   constructor(arr: ArrayLike<T>, indexMap?: Int32Array, nullValue?: T);
 
-  constructor(arr: WithIndexMap<T>, indexMap?: Int32Array);
+  constructor(arr: LazyArray<T>, indexMap?: Int32Array);
 
   constructor(getter: Getter<T>, indexMap: Int32Array | number);
 
@@ -53,7 +53,7 @@ export class WithIndexMap<T = any> {
         indexMap instanceof Int32Array
           ? indexMap
           : getDefaultIndexMap(indexMap ?? 0);
-    } else if (getter instanceof WithIndexMap) {
+    } else if (getter instanceof LazyArray) {
       const parentIndexMap = getter.indexMap;
       this._get = getter._get;
       this.indexMap =
@@ -75,7 +75,7 @@ export class WithIndexMap<T = any> {
           : getDefaultIndexMap(indexMap ?? 0);
       const _nullValue = (nullValue || []) as any[];
       const getters = tuple.data.map((value, i) => {
-        const nested = new WithIndexMap(value, _indexMap, _nullValue[i]);
+        const nested = new LazyArray(value, _indexMap, _nullValue[i]);
         return nested._get;
       });
       this._get = i => {
@@ -90,7 +90,7 @@ export class WithIndexMap<T = any> {
           : getDefaultIndexMap(indexMap ?? 0);
       const _nullValue = (nullValue || {}) as Record<string, any>;
       const getters = Object.entries(obj).map(([key, value]) => {
-        const nested = new WithIndexMap(value, _indexMap, _nullValue[key]);
+        const nested = new LazyArray(value, _indexMap, _nullValue[key]);
         return [key, nested._get] as [string, Getter<any>];
       });
       this._get = i => {
@@ -105,7 +105,7 @@ export class WithIndexMap<T = any> {
 
     this._iter = getDefaultIndexMap(this.indexMap.length);
 
-    const get = (_: any, prop: keyof WithIndexMap) => {
+    const get = (_: any, prop: keyof LazyArray) => {
       if (prop in this) return this[prop];
       return this.get(prop as unknown as number);
     };
@@ -134,9 +134,9 @@ export class WithIndexMap<T = any> {
     return this._iter.forEach(i => fn(this.get(i), i));
   }
 
-  map<U = any>(fn: (v: T, i: number) => any) {
+  map<U>(fn: (v: T, i: number) => any) {
     const { _get, indexMap } = this;
-    return new WithIndexMap<U>(i => fn(_get(indexMap[i]), i), indexMap.length);
+    return new LazyArray<U>(i => fn(_get(indexMap[i]), i), indexMap.length);
   }
 
   every(fn: (v: T, i: number) => any) {
@@ -210,16 +210,16 @@ export class WithIndexMap<T = any> {
     this.indexMap.forEach((v, i) => {
       reversed[n - 1 - i] = v;
     });
-    return new WithIndexMap(this._get, reversed);
+    return new LazyArray(this._get, reversed);
   }
 
   slice(start: number, end: number) {
-    return new WithIndexMap(this._get, this.indexMap.slice(start, end));
+    return new LazyArray(this._get, this.indexMap.slice(start, end));
   }
 
   filter(fn: (v: T, i: number) => any) {
     const filtered = this.indexMap.filter((_, i) => fn(this.get(i), i));
-    return new WithIndexMap(this._get, filtered);
+    return new LazyArray(this._get, filtered);
   }
 
   sort(compare: (a: T, b: T) => number) {
@@ -275,14 +275,14 @@ export class WithIndexMap<T = any> {
       mapping[i] = this.indexMap[mapping[i]];
     }
 
-    return new WithIndexMap(this._get, mapping.subarray(0, n));
+    return new LazyArray(this._get, mapping.subarray(0, n));
   }
 
-  match<U>(target: WithIndexMap<U>, matchFn: (a: T, b: U) => boolean) {
-    const targetIndexMap = this._iter.map(i =>
-      target.findIndex(v => matchFn(this.get(i), v))
-    );
-    return new WithIndexMap(target._get, targetIndexMap);
+  findAll<U = any>(target: LazyArray<U>, matchFn: (a: U, b: T, ai: number, bi: number) => boolean) {
+    const indexMap = target.map((u, ui) =>
+      this.findIndex((v, vi) => matchFn(u, v, ui, vi))
+    ).copyTo(Int32Array);
+    return new LazyArray(this._get, indexMap);
   }
 
   get proxy() {
@@ -293,19 +293,46 @@ export class WithIndexMap<T = any> {
     return this.indexMap.length;
   }
 
-  static dropNull(...arrays: WithIndexMap[]) {
-    const n = arrays[0].length;
-    let rootIndexMap = new Int32Array(n);
-    let j = 0;
-    for (let i = 0; i < n; i++) {
-      if (arrays.every(arr => arr.indexMap[i] >= 0)) {
-        rootIndexMap[j++] = i;
-      }
-    }
-    rootIndexMap = rootIndexMap.subarray(0, j);
-    return arrays.map(arr => {
-      const indexMap = rootIndexMap.map(i => arr.indexMap[i]);
-      return new WithIndexMap(arr._get, indexMap);
+  static nestedForEach<T>(
+    arr: LazyArray<T | LazyArray<T>>,
+    fn: (v: T, i: number) => void
+  ) {
+    arr.forEach((nested, i) => {
+      nested instanceof LazyArray
+        ? this.nestedForEach(nested, fn)
+        : fn(nested, i);
     });
   }
+
+  static nestedMap<T, U>(
+    arr: LazyArray<T | LazyArray<T>>,
+    fn: (v: T, i: number) => U
+  ):  LazyArray<U | LazyArray<U>> {
+    return arr.map((nested, i) => {
+      return nested instanceof LazyArray
+        ? this.nestedMap(nested, fn)
+        : fn(nested, i);
+    });
+  }
+
+  static nestedReduce<T, U>(
+    arr: LazyArray<T | LazyArray<T>>,
+    fn: (acc: U, v: () => U | T, i: number) => U,
+    init: U
+  ): U {
+    return arr.lazyReduce((acc, getNested, i) => {
+      return fn(
+        acc,
+        () => {
+          const nested = getNested();
+          return nested instanceof LazyArray
+            ? this.nestedReduce(nested, fn, init)
+            : nested;
+        },
+        i
+      );
+    }, init);
+  }
 }
+
+export type NestedLazyArray<T> = LazyArray<T | LazyArray<T>>;
