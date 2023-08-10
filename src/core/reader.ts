@@ -28,8 +28,6 @@ type ValueReturnType<U, T extends boolean> = T extends Single
   ? U
   : NestedLazyArray<U>;
 
-const MAX_INT32 = 2 ** 31 - 1;
-
 export const ALL_KEYS = Symbol('ALL_KEYS');
 export const ALL_VALUES = Symbol('ALL_VALUES');
 export const NULL_VALUE = Symbol('NULL_VALUE');
@@ -114,8 +112,8 @@ export class Reader<T extends boolean = Single> {
   isUndefined(atIndex: number | Iterable<number> = this.currentIndex) {
     return (
       this.currentOffset < 0 ||
-      (typeof atIndex === 'number' &&
-        (atIndex < 0 || atIndex >= this.currentLength))
+      this.currentLength <= 0 ||
+      (typeof atIndex === 'number' && atIndex < 0)
     );
   }
 
@@ -221,12 +219,7 @@ export class Reader<T extends boolean = Single> {
     : Reader<T> {
     const NextReader = this.constructor as typeof Reader;
     const { dataView } = NextReader;
-    const {
-      currentType,
-      currentOffset,
-      currentIndex,
-      currentLength
-    } = this;
+    const { currentType, currentOffset, currentIndex, currentLength } = this;
     let nextReader: Reader<boolean>;
     if (this.isTuple()) {
       if (typeof key !== 'number') {
@@ -238,7 +231,7 @@ export class Reader<T extends boolean = Single> {
         throw new KeyAccessError(`Index ${i} is out of bounds`);
       }
       const nextType = children[i];
-      const nextOffset = currentOffset + i * size;
+      const nextOffset = this.isUndefined() ? -1 : currentOffset + i * size;
       nextReader = new NextReader(
         nextType,
         nextOffset,
@@ -257,7 +250,7 @@ export class Reader<T extends boolean = Single> {
       }
       const i = keyIndex[key];
       const nextType = children[i];
-      const nextOffset = currentOffset + i * size;
+      const nextOffset = this.isUndefined() ? -1 : currentOffset + i * size;
       nextReader = new NextReader(
         nextType,
         nextOffset,
@@ -408,7 +401,7 @@ export class Reader<T extends boolean = Single> {
   private _createRefReader(atIndex: number): Reader<boolean> {
     const NextReader = this.constructor as typeof Reader;
     const { dataView } = NextReader;
-    const { currentOffset, currentType } = this;
+    const { currentType, currentOffset } = this;
     const {
       size,
       children: [nextType]
@@ -417,25 +410,23 @@ export class Reader<T extends boolean = Single> {
     const offset = currentOffset + atIndex * size;
     const nextOffset = isUndefined ? -1 : dataView.getInt32(offset, true);
     const nextIndex = isUndefined ? -1 : dataView.getInt32(offset + 4, true);
-    const nextLength = isUndefined ? 0 : MAX_INT32;
-    return new NextReader(nextType, nextOffset, nextIndex, nextLength);
+    return new NextReader(nextType, nextOffset, nextIndex, 1);
   }
 
   private _createLinkReader(atIndex: number): Reader<boolean> {
     const NextReader = this.constructor as typeof Reader;
     const { dataView } = NextReader;
-    const { currentOffset, currentType } = this;
+    const { currentType, currentOffset } = this;
     const { size, children } = currentType as SchemaCompoundType<'Link'>;
     const [schemaKey, nextType] = children[0].split('/');
     const isUndefined = this.isUndefined(atIndex);
     const offset = currentOffset + atIndex * size;
     const nextOffset = isUndefined ? -1 : dataView.getInt32(offset, true);
     const nextIndex = isUndefined ? -1 : dataView.getInt32(offset + 4, true);
-    const nextLength = isUndefined ? 0 : MAX_INT32;
 
     if (schemaKey in NextReader.linkedReaders) {
       const LinkedReader = NextReader.linkedReaders[schemaKey];
-      return new LinkedReader(nextType, nextOffset, nextIndex, nextLength);
+      return new LinkedReader(nextType, nextOffset, nextIndex, 1);
     } else {
       if (NextReader._getCalledInternally) {
         return this as Reader<boolean>;
