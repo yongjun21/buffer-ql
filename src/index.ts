@@ -1,6 +1,12 @@
-export { createReader, linkReaders, Reader } from './core/reader';
+export { createReader, linkReaders, ALL_KEYS, ALL_VALUES } from './core/reader';
+export type { Reader } from './core/reader';
 
-export { getDefaultIndexMap, tuple, LazyArray, NestedLazyArray } from './core/LazyArray'
+export {
+  getDefaultIndexMap,
+  tuple,
+  LazyArray,
+  NestedLazyArray
+} from './core/LazyArray';
 
 export { extendSchema } from './schema/index';
 
@@ -20,5 +26,5 @@ export {
   forwardMapOneOf,
   backwardMapOneOf,
   forwardMapSingleOneOf,
-  backwardMapSingleOneOf,
+  backwardMapSingleOneOf
 } from './helpers/bitmask';
