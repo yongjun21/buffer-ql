@@ -497,7 +497,7 @@ class NestedReader extends Reader<Multiple> {
     return this;
   }
 
-  value<U = any>(defaultValue?: any) {
+  value<U = any>() {
     return LazyArray.nestedMap(this.readers, reader =>
       reader.value()
     ) as ValueReturnType<U, Multiple>;
@@ -586,7 +586,7 @@ class BranchedReader extends Reader<Multiple> {
       throw new TraversalError(`Expects OneOf type`);
     }
 
-    const NextReader = this.constructor as typeof Reader;
+    const NextReader = root.constructor as typeof Reader;
     const { dataView } = NextReader;
     const { currentOffset, currentType, currentLength } = root;
     const { size, children } = currentType as SchemaCompoundType<'OneOf'>;
@@ -613,13 +613,12 @@ class BranchedReader extends Reader<Multiple> {
       );
       const nextType = children[discriminator];
       const nextOffset = currentOffset + discriminator * size;
-      const nextReader = new NextReader(
+      return new NextReader(
         nextType,
         nextOffset,
         nextIndex,
         currentLength
       );
-      return nextReader;
     } else {
       const discriminator = indexToOneOf(length, ...bitmasks);
       const forwardMaps = forwardMapOneOf(length, ...bitmasks);
@@ -630,13 +629,12 @@ class BranchedReader extends Reader<Multiple> {
           forwardMaps[i]
         );
         const nextOffset = currentOffset + i * 12;
-        const nextReader = new NextReader<Multiple>(
+        return new NextReader<Multiple>(
           nextType,
           nextOffset,
           nextIndex,
           currentLength
         );
-        return nextReader;
       });
 
       return new BranchedReader(branches, 0, discriminator);
