@@ -337,36 +337,70 @@ export class LazyArray<T = any> {
     }, init);
   }
 
-  static nestedLength<T>(arr: LazyArray<T | LazyArray<T>>) {
+  static iterateNested<T>(arr: LazyArray<T | LazyArray<T>>) {
+    return {
+      *[Symbol.iterator](): IterableIterator<T> {
+        for (const nested of arr) {
+          if (nested instanceof LazyArray) {
+            yield* LazyArray.iterateNested(nested);
+          } else {
+            yield nested;
+          }
+        }
+      }
+    };
+  }
+
+  static getNestedSize<T>(arr: LazyArray<T | LazyArray<T>>) {
     return this.nestedReduce(arr, acc => acc + 1, 0);
   }
 
-  static flattenNested<T>(
-    arr: LazyArray<T | LazyArray<T>>
-  ): [T[], (number | number[])[]] {
+  static getNestedDepth<T>(arr: LazyArray<T | LazyArray<T>>) {
     class Acc {
-      flattened: T[] = [];
-      indexes: (number | number[])[] = [];
+      depth = 0;
     }
+    return this.nestedReduce(arr, (acc, getNested) => {
+      const nested = getNested();
+      if (nested instanceof Acc) {
+        acc.depth = Math.max(acc.depth, nested.depth + 1);
+      }
+      return acc;
+    }, new Acc()).depth;
+  }
 
-    const { flattened, indexes } = this.nestedReduce(
+  static getFlattenedIndexes<T>(
+    arr: LazyArray<T | LazyArray<T>>
+  ): number[][] {
+    class Acc {
+      count = 0;
+      height = 0;
+      indexes: number[][] = [];
+    }
+    return this.nestedReduce(
       arr,
       (acc, getNested, i) => {
         const nested = getNested();
         if (nested instanceof Acc) {
-          if (nested.indexes.length > 0)
-            acc.indexes.push(nested.indexes as number | number[]);
-          else acc.indexes.push(acc.flattened.length);
-          for (const v of nested.flattened) acc.flattened.push(v);
+          if (i === 0) {
+            acc.height = nested.height + 1;
+            acc.indexes = [[], ...nested.indexes]
+          } else if (acc.height !== nested.height + 1) {
+            throw new Error("Nested array height is not consistent");
+          }
+          acc.indexes[0].push(acc.count);
+          for (let k = 1; k < acc.height; k++) {
+            for (const i of nested.indexes[k - 1]) {
+              acc.indexes[k].push(i + acc.count);
+            }
+          }
+          acc.count += nested.count;
         } else {
-          acc.flattened.push(nested);
+          acc.count++;
         }
         return acc;
       },
       new Acc()
-    );
-
-    return [flattened, indexes];
+    ).indexes.reverse();
   }
 }
 
