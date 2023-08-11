@@ -4,11 +4,13 @@ export const SCHEMA = extendSchema(
   {
     XYZ: {
       size: 3 * 4,
-      read: (dv, offset) => new Float32Array(dv.buffer, offset, 3)
+      encode: (dv, offset) => new Float32Array(dv.buffer, offset, 3),
+      decode: () => undefined,
     },
     XYZW: {
       size: 4 * 4,
-      read: (dv, offset) => new Float32Array(dv.buffer, offset, 4)
+      encode: (dv, offset) => new Float32Array(dv.buffer, offset, 4),
+      decode: () => undefined,
     },
   },
   {
@@ -25,6 +27,12 @@ export const SCHEMA = extendSchema(
       'Optional<Pose>',
     ],
     Linked: 'Link<AnotherSchema/AnotherType>'
+  },
+  {
+    Pose: v => v
+  },
+  {
+    XYZ: v => true
   }
 );
 

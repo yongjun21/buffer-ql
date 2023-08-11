@@ -22,28 +22,28 @@ function testBitmask() {
   const encoded = encodeBitmask(test, 256);
   console.log(encoded);
   const decoded = decodeBitmask(encoded, 256);
-  console.log([...decoded]);
-  console.log([...indexToBit(decoded, 32)]);
+  console.log(decoded);
+  console.log(indexToBit(32, decoded).asUint8Array());
 
-  const forwardIndexes = [...forwardMapIndexes(decoded, 32)];
-  const backwardIndexes = [...backwardMapIndexes(decoded, 32)];
+  const forwardIndexes = forwardMapIndexes(32, decoded).asInt32Array();
+  const backwardIndexes = backwardMapIndexes(32, decoded).asInt32Array();
 
   console.log(forwardIndexes);
   console.log(backwardIndexes);
-  console.log([...chainForwardIndexes(forwardIndexes, forwardIndexes)]);
-  console.log([...chainBackwardIndexes(backwardIndexes, backwardIndexes)]);
+  console.log(chainForwardIndexes(32, forwardIndexes, forwardIndexes).asInt32Array());
+  console.log(chainBackwardIndexes(32, backwardIndexes, backwardIndexes).asInt32Array());
 
   console.log(forwardIndexes.map((_, i) => forwardMapSingleIndex(decoded, i)));
   console.log(
     backwardIndexes.map((_, i) => backwardMapSingleIndex(decoded, i))
   );
 
-  const discriminator = [...indexToOneOf(32, decoded, decoded)];
+  const discriminator = indexToOneOf(32, decoded, decoded).asUint8Array();
   const forwardOneOf = forwardMapOneOf(32, decoded, decoded);
   const backwardOneOf = backwardMapOneOf(32, decoded, decoded);
   console.log(discriminator);
-  console.log(forwardOneOf.map(iter => [...iter]));
-  console.log(backwardOneOf.map(iter => [...iter]));
+  console.log(forwardOneOf.map(iter => iter.asInt32Array()));
+  console.log(backwardOneOf.map(iter => iter.asInt32Array()));
 
   console.log(
     [...discriminator]

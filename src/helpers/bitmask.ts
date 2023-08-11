@@ -4,9 +4,7 @@ import { Stack } from './common.js';
 
 const POWER2 = new Uint32Array(32).map((_, i) => Math.pow(2, i));
 
-function* alwaysZero () {
-  while (true) yield 0;
-}
+export type Int32Indexes = ReturnType<typeof forwardMapIndexes>;
 
 export function decodeBitmask(encoded: Uint8Array, n: number) {
   return {
@@ -33,7 +31,8 @@ export function decodeBitmask(encoded: Uint8Array, n: number) {
           currIndex += POWER2[level] || Math.pow(2, level);
         }
       }
-    }
+    },
+    asInt32Array: asInt32Array(n)
   };
 }
 
@@ -99,9 +98,9 @@ export function bitToIndex(iter: Iterable<any>) {
   };
 }
 
-export function oneOfToIndex(iter: Iterable<number>, kMax: number) {
+export function oneOfToIndex(iter: Iterable<number>, noOfClass: number) {
   const iters: Iterable<number>[] = [];
-  for (let k = 0; k < kMax - 1; k++) {
+  for (let k = 0; k < noOfClass - 1; k++) {
     iters.push(bitToIndex({
       *[Symbol.iterator]() {
         let index = 0
@@ -125,7 +124,7 @@ export function oneOfToIndex(iter: Iterable<number>, kMax: number) {
 export function indexToOneOf(n: number,
   ...decodedBitmasks: Iterable<number>[]
 ) {
-  const iters = decodedBitmasks.map(b => indexToBit(b, n));
+  const iters: Iterable<number>[] = decodedBitmasks.map(b => indexToBit(n, b));
   iters.push(alwaysZero());
 
   return {
@@ -141,11 +140,12 @@ export function indexToOneOf(n: number,
           }
         }
       }
-    }
+    },
+    asUint8Array: asUint8Array(n)
   };
 }
 
-export function indexToBit(decodedBitmask: Iterable<number>, n: number) {
+export function indexToBit(n: number, decodedBitmask: Iterable<number>) {
   return {
     *[Symbol.iterator]() {
       let index = 0;
@@ -161,13 +161,14 @@ export function indexToBit(decodedBitmask: Iterable<number>, n: number) {
         yield curr;
         index++;
       }
-    }
+    },
+    asUint8Array: asUint8Array(n)
   };
 }
 
 export function forwardMapIndexes(
-  decodedBitmask: Iterable<number>,
   n: number,
+  decodedBitmask: Iterable<number>,
   equals = 1
 ) {
   return {
@@ -200,13 +201,14 @@ export function forwardMapIndexes(
           index++;
         }
       }
-    }
+    },
+    asInt32Array: asInt32Array(n)
   };
 }
 
 export function backwardMapIndexes(
-  decodedBitmask: Iterable<number>,
   n: number,
+  decodedBitmask: Iterable<number>,
   equals = 1
 ) {
   return {
@@ -224,7 +226,8 @@ export function backwardMapIndexes(
       if (curr) {
         while (index < n) yield index++;
       }
-    }
+    },
+    asInt32Array: asInt32Array(n)
   };
 }
 
@@ -267,6 +270,7 @@ export function backwardMapSingleIndex(
 }
 
 export function chainForwardIndexes(
+  n: number,
   currMapped: Iterable<number>,
   nextMapped: Iterable<number>
 ) {
@@ -280,11 +284,13 @@ export function chainForwardIndexes(
           yield next.done ? -1 : next.value;
         }
       }
-    }
+    },
+    asInt32Array: asInt32Array(n)
   };
 }
 
 export function chainBackwardIndexes(
+  n: number,
   currMapped: Iterable<number>,
   nextMapped: Iterable<number>
 ) {
@@ -301,7 +307,8 @@ export function chainBackwardIndexes(
         }
         yield next.value;
       }
-    }
+    },
+    asInt32Array: asInt32Array(n)
   };
 }
 
@@ -309,10 +316,10 @@ export function forwardMapOneOf(
   n: number,
   ...decodedBitmasks: Iterable<number>[]
 ) {
-  const iters = decodedBitmasks.map(b => indexToBit(b, n));
+  const iters: Iterable<number>[] = decodedBitmasks.map(b => indexToBit(n, b));
   iters.push(alwaysZero());
 
-  const forwardMaps: Iterable<number>[] = [];
+  const forwardMaps: Int32Indexes[] = [];
   for (let kn = 0; kn < iters.length; kn++) {
     forwardMaps.push({
       *[Symbol.iterator]() {
@@ -334,7 +341,8 @@ export function forwardMapOneOf(
             }
           }
         }
-      }
+      },
+      asInt32Array: asInt32Array(n)
     });
   }
   return forwardMaps;
@@ -344,10 +352,10 @@ export function backwardMapOneOf(
   n: number,
   ...decodedBitmasks: Iterable<number>[]
 ) {
-  const iters = decodedBitmasks.map(b => indexToBit(b, n));
+  const iters: Iterable<number>[] = decodedBitmasks.map(b => indexToBit(n, b));
   iters.push(alwaysZero());
 
-  const backwardMaps: Iterable<number>[] = [];
+  const backwardMaps: Int32Indexes[] = [];
   for (let kn = 0; kn < iters.length; kn++) {
     backwardMaps.push({
       *[Symbol.iterator]() {
@@ -367,7 +375,8 @@ export function backwardMapOneOf(
           }
           index++;
         }
-      }
+      },
+      asInt32Array: asInt32Array(n)
     });
   }
   return backwardMaps;
@@ -432,4 +441,32 @@ function writeBit(arr: Uint8Array) {
     }
     return n;
   };
+}
+
+function asUint8Array(n: number) {
+  return function (this: Iterable<number>) {
+    const output = new Uint8Array(n);
+    let k = 0;
+    for (const i of this) {
+      if (k >= n) break;
+      output[k++] = i;
+    }
+    return output.slice(0, k);
+  }
+}
+
+function asInt32Array(n: number) {
+  return function (this: Iterable<number>) {
+    const output = new Int32Array(n);
+    let k = 0;
+    for (const i of this) {
+      if (k >= n) break;
+      output[k++] = i;
+    }
+    return output.slice(0, k);
+  }
+}
+
+function* alwaysZero () {
+  while (true) yield 0;
 }

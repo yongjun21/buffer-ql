@@ -1,6 +1,6 @@
 import { validateTransitions } from '../helpers/stateMachine.js';
 
-import { TypeError } from '../core/error.js';
+import { TypeError } from '../helpers/error.js';
 
 import type { Modifier } from '../types/common.js';
 import type { SchemaCompoundType } from '../schema/index.js';
@@ -40,7 +40,6 @@ const VALID_TRANSITIONS = {
 type TokenState = keyof typeof VALID_TRANSITIONS;
 
 export function parseExpression(label: string, exp: string) {
-
   type Parsed = Omit<
     SchemaCompoundType<SchemaTypeModifierName | 'Alias'>,
     'size'
@@ -100,7 +99,7 @@ function validateExpression(stateTransition: TokenState[]) {
   const transitionsValid = validateTransitions(
     [',', ...stateTransition, ','],
     (input, output) => VALID_TRANSITIONS[input].includes(output)
-  )
+  );
   if (!transitionsValid) return false;
 
   let level = 0;

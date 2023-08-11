@@ -1,28 +1,47 @@
-import { SCHEMA_BASE_TYPES } from './primitives.js';
 import {
+  SCHEMA_BASE_PRIMITIVE_TYPES,
+  SCHEMA_BASE_COMPOUND_TYPES
+} from './base.js';
+import { parseExpression } from './compound.js';
+
+import { typed } from '../helpers/common.js';
+
+import type {
   SchemaTypeModifierName,
-  SchemaCompoundTypeExpression,
-  parseExpression
+  SchemaCompoundTypeExpression
 } from './compound.js';
 
-export type SchemaTypeReader = (dv: DataView, offset: number) => any;
+export type SchemaTypeDecoder<T> = (dv: DataView, offset: number) => T;
+export type SchemaTypeEncoder<T> = (
+  dv: DataView,
+  offset: number,
+  value: T,
+  ...args: any[]
+) => void;
+export type SchemaTypeChecker = (value: any) => boolean;
 export interface SchemaPrimitiveType {
   size: number;
-  read: SchemaTypeReader;
+  decode: SchemaTypeDecoder<any>;
+  encode: SchemaTypeEncoder<any>;
+  transform?: (value: any) => any;
+  check?: SchemaTypeChecker;
 }
 
 export interface SchemaCompoundType<T extends string> {
   type: T;
   size: number;
   children: string[];
+  transform?: (value: any) => any;
+  check?: SchemaTypeChecker;
 }
 
 export interface SchemaNamedTupleType extends SchemaCompoundType<'NamedTuple'> {
-  type: 'NamedTuple';
   keyIndex: Record<string, number>;
 }
 
-type SchemaBaseTypeName = (typeof SCHEMA_BASE_TYPES)[number]['name'];
+type SchemaBaseTypeName =
+  | (typeof SCHEMA_BASE_PRIMITIVE_TYPES)[number]['name']
+  | (typeof SCHEMA_BASE_COMPOUND_TYPES)[number]['name'];
 
 export type SchemaTypeExpression<T extends string> =
   | T
@@ -36,7 +55,7 @@ export type SchemaTypeDefinition<T extends string = string> =
 
 type SchemaType =
   | (SchemaPrimitiveType & { type: 'Primitive' })
-  | SchemaCompoundType<SchemaTypeModifierName | 'Alias' | 'Tuple'>
+  | SchemaCompoundType<SchemaTypeModifierName | 'Tuple' | 'Alias'>
   | SchemaNamedTupleType;
 
 export type Schema = Record<string, SchemaType>;
@@ -63,17 +82,25 @@ const SCHEMA_COMPOUND_TYPE_SIZE = {
   Tuple: 4,
   // offset to values
   NamedTuple: 4
-} as const;
+};
 
 export function extendSchema<T extends string, U extends T, V extends U>(
   baseTypes: Record<V, SchemaPrimitiveType>,
-  types: { [_ in T]?: SchemaTypeDefinition<U> }
+  types: { [_ in T]?: SchemaTypeDefinition<U> },
+  transforms: { [_ in T]?: (value: any) => any } = {},
+  checks: { [_ in T]?: (value: any) => boolean } = {}
 ) {
   const schema: Schema = {};
-  for (const record of SCHEMA_BASE_TYPES) {
+  for (const record of SCHEMA_BASE_PRIMITIVE_TYPES) {
     schema[record.name] = {
       ...record,
       type: 'Primitive'
+    };
+  }
+  for (const record of SCHEMA_BASE_COMPOUND_TYPES) {
+    schema[record.name] = {
+      ...record,
+      size: SCHEMA_COMPOUND_TYPE_SIZE[record.type]
     };
   }
   for (const [label, record] of Object.entries<SchemaPrimitiveType>(
@@ -85,21 +112,24 @@ export function extendSchema<T extends string, U extends T, V extends U>(
     };
   }
 
-  for (const [label, value] of Object.entries(types)) {
+  for (const [label, value] of Object.entries<any>(types)) {
     if (typeof value === 'string') {
       for (const [_label, _value] of Object.entries(
         parseExpression(label, value)
       )) {
         schema[_label] = {
           ..._value,
-          size: SCHEMA_COMPOUND_TYPE_SIZE[_value.type]
-        };
+          size: SCHEMA_COMPOUND_TYPE_SIZE[_value.type],
+          transform: transforms[_label as T],
+          check: checks[_label as T]
+        } as SchemaType;
       }
     } else if (Array.isArray(value!)) {
       const record: SchemaType = {
         type: 'Tuple',
         children: [],
-        size: SCHEMA_COMPOUND_TYPE_SIZE.Tuple
+        size: SCHEMA_COMPOUND_TYPE_SIZE.Tuple,
+        check: typed<SchemaTypeChecker>(Array.isArray)
       };
       schema[label] = record;
       value.forEach((exp, i) => {
@@ -115,7 +145,7 @@ export function extendSchema<T extends string, U extends T, V extends U>(
         size: SCHEMA_COMPOUND_TYPE_SIZE.NamedTuple
       };
       schema[label] = record;
-      Object.entries(value!).forEach(([key, exp], i) => {
+      Object.entries<string>(value).forEach(([key, exp], i) => {
         const _label = `${label}.${key}`;
         record.children.push(_label);
         record.keyIndex[key] = i;
@@ -163,6 +193,13 @@ function validateSchema(schema: Schema) {
           `Modifier type OneOf should not reference duplicate children`
         );
       }
+      record.children.forEach(child => {
+        if (!schema[child].check) {
+          throw new TypeError(
+            `Type ${child} is present as an OneOf option but missing a check function`
+          );
+        }
+      });
     }
 
     if (record.type === 'Optional') {

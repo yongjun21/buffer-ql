@@ -18,3 +18,10 @@ export class TypeError extends Error {
     this.name = 'TypeError';
   }
 }
+
+export class ValueError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ValueError';
+  }
+}

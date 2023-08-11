@@ -8,9 +8,9 @@ import {
   forwardMapOneOf,
   forwardMapSingleOneOf
 } from '../helpers/bitmask.js';
-import { readString } from '../helpers/common.js';
+import { readString } from '../helpers/io.js';
 
-import { KeyAccessError, TraversalError, TypeError } from './error.js';
+import { KeyAccessError, TraversalError, TypeError } from '../helpers/error.js';
 
 import type {
   Schema,
@@ -18,6 +18,7 @@ import type {
   SchemaCompoundType,
   SchemaNamedTupleType
 } from '../schema/index.js';
+import type { Int32Indexes } from '../helpers/bitmask.js';
 
 type Single = true;
 type Multiple = false;
@@ -44,7 +45,7 @@ export class Reader<T extends boolean = Single> {
   static dataView: DataView = new DataView(new Uint8Array(0).buffer);
   static schema: Schema = {};
   static linkedReaders: Record<string, any> = {};
-  private static _getCalledInternally = false;
+  static _getCalledInternally = false;
 
   typeName: string;
   currentOffset: number;
@@ -157,8 +158,8 @@ export class Reader<T extends boolean = Single> {
     const { currentType, currentOffset, currentIndex } = this;
     if (this.isUndefined()) return;
     if (this.isPrimitive()) {
-      const { size, read } = currentType as SchemaPrimitiveType;
-      parent[key] = read(dataView, currentOffset + currentIndex * size);
+      const { size, decode } = currentType as SchemaPrimitiveType;
+      parent[key] = decode(dataView, currentOffset + currentIndex * size);
     } else if (this.isTuple()) {
       const { children } = currentType as SchemaCompoundType<'Tuple'>;
       parent[key] = [];
@@ -293,8 +294,9 @@ export class Reader<T extends boolean = Single> {
       const nextIndex = this.singleValue()
         ? forwardMapSingleIndex(bitmask, this.currentIndex)
         : chainForwardIndexes(
+            currentLength,
             this.currentIndex as Iterable<number>,
-            forwardMapIndexes(bitmask, currentLength)
+            forwardMapIndexes(currentLength, bitmask)
           );
       nextReader = new NextReader<boolean>(
         nextType,
@@ -437,16 +439,12 @@ export class Reader<T extends boolean = Single> {
   }
 
   private _freezeCurrentIndex() {
+    const { currentIndex } = this;
     if (this.singleValue()) {
       throw new TraversalError('Calling _freezeCurrentIndex on a single value');
     }
-    const { currentLength, currentIndex } = this;
-    const frozen = new Int32Array(currentLength);
-    let i = 0;
-    for (const index of currentIndex as Iterable<number>) {
-      if (i >= currentLength) break;
-      frozen[i++] = index;
-    }
+    if (currentIndex instanceof Int32Array) return currentIndex;
+    const frozen = (currentIndex as Int32Indexes).asInt32Array();
     this.currentIndex = frozen as Iterable<number> as IndexType<T>;
     return frozen;
   }
@@ -517,12 +515,12 @@ class NestedReader extends Reader<Multiple> {
 class BranchedReader extends Reader<Multiple> {
   branches: Reader<Multiple>[];
   currentBranch: number;
-  discriminator: Iterable<number>;
+  discriminator: Uint8Array;
 
   constructor(
     branches: Reader<Multiple>[],
     currentBranch: number,
-    discriminator: Iterable<number>
+    discriminator: Uint8Array
   ) {
     const branch = branches[currentBranch];
     super(
@@ -562,23 +560,10 @@ class BranchedReader extends Reader<Multiple> {
   }
 
   value<U = any>() {
-    const { currentLength } = this;
-    const branchValues = this.branches.map(branch => branch.value());
-    const discriminatorValue = this._freezeDiscriminator();
-    const getter = (i: number) => branchValues[discriminatorValue[i]].get(i);
-    return new LazyArray<U>(getter, currentLength);
-  }
-
-  private _freezeDiscriminator() {
     const { discriminator, currentLength } = this;
-    const frozen = new Uint8Array(currentLength);
-    let i = 0;
-    for (const index of discriminator) {
-      if (i >= currentLength) break;
-      frozen[i++] = index;
-    }
-    this.discriminator = frozen as Iterable<number>;
-    return frozen;
+    const branchValues = this.branches.map(branch => branch.value());
+    const getter = (i: number) => branchValues[discriminator[i]].get(i);
+    return new LazyArray<U>(getter, currentLength);
   }
 
   static from<T extends boolean>(root: Reader<T>) {
@@ -620,11 +605,12 @@ class BranchedReader extends Reader<Multiple> {
         currentLength
       );
     } else {
-      const discriminator = indexToOneOf(length, ...bitmasks);
+      const discriminator = indexToOneOf(length, ...bitmasks).asUint8Array();
       const forwardMaps = forwardMapOneOf(length, ...bitmasks);
 
       const branches = children.map((nextType, i) => {
         const nextIndex = chainForwardIndexes(
+          currentLength,
           root.currentIndex as Iterable<number>,
           forwardMaps[i]
         );
@@ -645,8 +631,10 @@ class BranchedReader extends Reader<Multiple> {
 export function createReader(data: ArrayBuffer | DataView, schema: Schema) {
   const dataView = data instanceof DataView ? data : new DataView(data);
   class _Reader extends Reader {
-    dataView = dataView;
-    schema = schema;
+    static dataView = dataView;
+    static schema = schema;
+    static linkedReaders = super.linkedReaders;
+    static _getCalledInternally = super._getCalledInternally;
   }
   return _Reader as typeof Reader;
 }

@@ -1,6 +1,6 @@
 import type { ArrayLike, ArrayConstructor, Getter } from '../types/common.js';
 
-let defaultMapping = new Int32Array(1);
+let defaultMapping = new Int32Array(0);
 
 export function getDefaultIndexMap(n: number) {
   if (n <= defaultMapping.length) return defaultMapping.subarray(0, n);
@@ -134,7 +134,7 @@ export class LazyArray<T = any> {
     return this._iter.forEach(i => fn(this.get(i), i));
   }
 
-  map<U>(fn: (v: T, i: number) => any) {
+  map<U>(fn: (v: T, i: number) => U) {
     const { _get, indexMap } = this;
     return new LazyArray<U>(i => fn(_get(indexMap[i]), i), indexMap.length);
   }
@@ -313,7 +313,7 @@ export class LazyArray<T = any> {
   ): LazyArray<U | LazyArray<U>> {
     return arr.map((nested, i) => {
       return nested instanceof LazyArray
-        ? this.nestedMap(nested, fn)
+        ? this.nestedMap(nested, fn) as LazyArray<U>
         : fn(nested, i);
     });
   }
