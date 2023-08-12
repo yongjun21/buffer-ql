@@ -400,4 +400,6 @@ export function encodeWithSchema(data: any, schema: Schema, rootType: string) {
   combined.set(new Uint8Array(buffer), 0);
   combined.set(stringBuffer, buffer.byteLength);
   combined.set(bitmaskBuffer, buffer.byteLength + stringBuffer.length);
+
+  return combined;
 }
