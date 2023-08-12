@@ -1,3 +1,5 @@
+import { isArray } from '../helpers/common.js';
+
 import type { ArrayLike, ArrayConstructor, Getter } from '../types/common.js';
 
 let defaultMapping = new Int32Array(0);
@@ -60,8 +62,8 @@ export class LazyArray<T = any> {
         indexMap && indexMap instanceof Int32Array
           ? indexMap.map(i => parentIndexMap[i])
           : parentIndexMap;
-    } else if (Array.isArray(getter) || ArrayBuffer.isView(getter)) {
-      const arr = getter as ArrayLike<T>;
+    } else if (isArray(getter)) {
+      const arr = getter;
       this._get = i => arr[i] ?? nullValue!;
       this.indexMap =
         indexMap && indexMap instanceof Int32Array
