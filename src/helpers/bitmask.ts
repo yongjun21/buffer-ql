@@ -82,7 +82,7 @@ export function encodeBitmask(iter: Iterable<number>, n: number) {
   return output.slice(0, Math.ceil(length / 8));
 }
 
-export function bitToIndex(iter: Iterable<any>) {
+export function bitToIndex(iter: Iterable<any>): Iterable<number> {
   return {
     *[Symbol.iterator]() {
       let index = 0;
@@ -98,30 +98,36 @@ export function bitToIndex(iter: Iterable<any>) {
   };
 }
 
-export function oneOfToIndex(iter: Iterable<number>, noOfClass: number) {
+export function oneOfToIndex(
+  iter: Iterable<number>,
+  noOfClass: number
+): Iterable<number>[] {
   const iters: Iterable<number>[] = [];
   for (let k = 0; k < noOfClass - 1; k++) {
-    iters.push(bitToIndex({
-      *[Symbol.iterator]() {
-        let index = 0
-        let curr = 0;
-        for (const n of iter) {
-          if (n >= k) {
-            const b = n > k ? 1 : 0;
-            if (b !== curr) {
-              yield index;
-              curr = b;
+    iters.push(
+      bitToIndex({
+        *[Symbol.iterator]() {
+          let index = 0;
+          let curr = 0;
+          for (const n of iter) {
+            if (n >= k) {
+              const b = n > k ? 1 : 0;
+              if (b !== curr) {
+                yield index;
+                curr = b;
+              }
+              index++;
             }
-            index++;
           }
         }
-      }
-    }));
+      })
+    );
   }
   return iters;
 }
 
-export function indexToOneOf(n: number,
+export function indexToOneOf(
+  n: number,
   ...decodedBitmasks: Iterable<number>[]
 ) {
   const iters: Iterable<number>[] = decodedBitmasks.map(b => indexToBit(n, b));
@@ -452,7 +458,7 @@ function asUint8Array(n: number) {
       output[k++] = i;
     }
     return output.slice(0, k);
-  }
+  };
 }
 
 function asInt32Array(n: number) {
@@ -464,9 +470,9 @@ function asInt32Array(n: number) {
       output[k++] = i;
     }
     return output.slice(0, k);
-  }
+  };
 }
 
-function* alwaysZero () {
+function* alwaysZero() {
   while (true) yield 0;
 }

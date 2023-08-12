@@ -36,7 +36,8 @@ export interface SchemaCompoundType<T extends string> {
 }
 
 export interface SchemaNamedTupleType extends SchemaCompoundType<'NamedTuple'> {
-  keyIndex: Record<string, number>;
+  keys: string[];
+  indexes: Record<string, number>;
 }
 
 type SchemaBaseTypeName =
@@ -66,8 +67,7 @@ const SCHEMA_COMPOUND_TYPE_SIZE = {
   // offset to keys + offset to values + length
   Map: 12,
   // (offset + length) to bitmask + offset to value
-  // optional type is always forwarded
-  Optional: 0,
+  Optional: 12,
   // offset to branch0 + (offset + length) to bitmask0 +
   // offset to branch1 + (offset + length) to bitmask1 + ...
   // offset to branchN
@@ -141,14 +141,16 @@ export function extendSchema<T extends string, U extends T, V extends U>(
       const record: SchemaType = {
         type: 'NamedTuple',
         children: [],
-        keyIndex: {},
+        keys: [],
+        indexes: {},
         size: SCHEMA_COMPOUND_TYPE_SIZE.NamedTuple
       };
       schema[label] = record;
       Object.entries<string>(value).forEach(([key, exp], i) => {
         const _label = `${label}.${key}`;
         record.children.push(_label);
-        record.keyIndex[key] = i;
+        record.keys.push(key);
+        record.indexes[key] = i;
         Object.assign(schema, parseExpression(_label, exp));
       });
     }

@@ -4,7 +4,7 @@ export interface ArrayLike<T> {
 }
 
 export interface ArrayConstructor<T> {
-  new (length: number): { [n: number]: T };
+  new (length: number): ArrayLike<T>;
 }
 
 export type Getter<T> = (i: number) => T;

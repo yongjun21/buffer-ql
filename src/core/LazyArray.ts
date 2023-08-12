@@ -280,6 +280,10 @@ export class LazyArray<T = any> {
     return new LazyArray(this._get, mapping.subarray(0, n));
   }
 
+  eagerEvaluate(Arr: ArrayConstructor<T> = Array) {
+    return new LazyArray(this.copyTo(Arr));
+  }
+
   findAll<U = any>(
     target: LazyArray<U>,
     matchFn: (a: U, b: T, ai: number, bi: number) => boolean

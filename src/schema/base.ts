@@ -111,8 +111,8 @@ export const SCHEMA_BASE_PRIMITIVE_TYPES = [
     encode: typed<Encoder<string>>(
       (dv, offset, value, stringWriter: StringWriter) => {
         const [_offset, _length] = stringWriter.write(value);
-        dv.setFloat32(offset, _offset, true);
-        dv.setFloat32(offset + 4, _length, true);
+        dv.setInt32(offset, _offset, true);
+        dv.setInt32(offset + 4, _length, true);
       }
     ),
     check: typed<Checker>(value => typeof value === 'string')

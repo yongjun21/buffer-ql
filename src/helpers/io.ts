@@ -8,7 +8,7 @@ export function readString(dv: DataView, offset: number) {
   return textDecoder.decode(new Uint8Array(dv.buffer, _offset, _length));
 }
 
-export function createStringWriter() {
+export function createStringWriter(startOffset = 0) {
   const textEncoder = new TextEncoder();
   let buffer = new Uint8Array(0);
   let offset = 0;
@@ -23,7 +23,7 @@ export function createStringWriter() {
         buffer = newBuffer;
       }
       buffer.set(encoded, offset);
-      const output: [number, number] = [offset, encoded.length];
+      const output: [number, number] = [startOffset + offset, encoded.length];
       offset += encoded.length;
       return output;
     },
@@ -35,7 +35,7 @@ export function createStringWriter() {
 
 export type StringWriter = ReturnType<typeof createStringWriter>;
 
-export function createBitmaskWriter() {
+export function createBitmaskWriter(startOffset = 0) {
   let buffer = new Uint8Array(0);
   let offset = 0;
 
@@ -49,7 +49,7 @@ export function createBitmaskWriter() {
         buffer = newBuffer;
       }
       buffer.set(encoded, offset);
-      const output: [number, number] = [offset, encoded.length];
+      const output: [number, number] = [startOffset + offset, encoded.length];
       offset += encoded.length;
       return output;
     },

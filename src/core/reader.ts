@@ -167,11 +167,10 @@ export class Reader<T extends boolean = Single> {
         currentStack.push([this.get(k), parent[key], k]);
       }
     } else if (this.isNamedTuple()) {
-      const { children, keyIndex } = currentType as SchemaNamedTupleType;
-      const childKeys = Object.keys(keyIndex);
+      const { children, keys } = currentType as SchemaNamedTupleType;
       parent[key] = {};
       for (let k = children.length - 1; k >= 0; k--) {
-        const childKey = childKeys[k];
+        const childKey = keys[k];
         currentStack.push([this.get(key), parent[key], childKey]);
       }
     } else if (this.isArray()) {
@@ -245,11 +244,11 @@ export class Reader<T extends boolean = Single> {
           'Named tuple type can only be accessed by key'
         );
       }
-      const { size, children, keyIndex } = currentType as SchemaNamedTupleType;
-      if (!(key in keyIndex)) {
+      const { size, children, indexes } = currentType as SchemaNamedTupleType;
+      if (!(key in indexes)) {
         throw new KeyAccessError(`Undefined key ${key}`);
       }
-      const i = keyIndex[key];
+      const i = indexes[key];
       const nextType = children[i];
       const nextOffset = this.isUndefined() ? -1 : currentOffset + i * size;
       nextReader = new NextReader(
