@@ -1,14 +1,14 @@
-export class KeyAccessError extends Error {
+export class UsageError extends Error {
   constructor(message: string) {
     super(message);
-    this.name = 'KeyAccessError';
+    this.name = 'UsageError';
   }
 }
 
-export class TraversalError extends Error {
+export class InternalError extends Error {
   constructor(message: string) {
     super(message);
-    this.name = 'TraversalError';
+    this.name = 'InternalError';
   }
 }
 

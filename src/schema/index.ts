@@ -212,6 +212,14 @@ function validateSchema(schema: Schema) {
       }
     }
 
+    if (record.type === 'Ref') {
+      if (schema[record.children[0]].type === 'Ref') {
+        throw new TypeError(
+          `Modifier type Ref should not reference another Ref`
+        );
+      }
+    }
+
     if (record.type === 'Link') {
       const [schemaName, ...rest] = record.children[0].split('/');
       const typeName = rest.join('/');
