@@ -365,7 +365,7 @@ export class Reader<T extends boolean = Single> {
     let offset = -1;
     let lastIndex = -1;
     let length = 0;
-    for (const index of currentIndex as Iterable<number>) {
+    for (const index of currentIndex as Int32Array) {
       if (index < 0 || index >= currentLength) continue;
       if (offset < 0) {
         offset = currentOffset + index * size;
