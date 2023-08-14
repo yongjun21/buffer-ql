@@ -4,7 +4,7 @@ import { Stack } from './common.js';
 
 const POWER2 = new Uint32Array(32).map((_, i) => Math.pow(2, i));
 
-export type Int32Indexes = ReturnType<typeof forwardMapIndexes>;
+type Int32Indexes = ReturnType<typeof decodeBitmask>;
 
 export function decodeBitmask(encoded: Uint8Array, n: number) {
   return {

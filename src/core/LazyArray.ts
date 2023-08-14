@@ -1,4 +1,7 @@
+import { Reader } from './reader.js';
 import { isArray } from '../helpers/common.js';
+
+import { UsageError } from '../helpers/error.js';
 
 import type { ArrayLike, ArrayConstructor, Getter } from '../types/common.js';
 
@@ -150,11 +153,19 @@ export class LazyArray<T = any> {
   }
 
   find(fn: (v: T, i: number) => any) {
-    return this._iter.find(i => fn(this.get(i), i));
+    for (const i of this._iter) {
+      const v = this.get(i);
+      if (fn(v, i)) return v;
+    }
+    return undefined;
   }
 
   findIndex(fn: (v: T, i: number) => any) {
-    return this._iter.findIndex(i => fn(this.get(i), i));
+    for (const i of this._iter) {
+      const v = this.get(i);
+      if (fn(v, i)) return i;
+    }
+    return -1;
   }
 
   indexOf(value: T, fromIndex = 0) {
@@ -215,7 +226,7 @@ export class LazyArray<T = any> {
     return new LazyArray(this._get, reversed);
   }
 
-  slice(start: number, end: number) {
+  slice(start?: number, end?: number) {
     return new LazyArray(this._get, this.indexMap.slice(start, end));
   }
 
@@ -424,7 +435,7 @@ export class LazyArray<T = any> {
             acc.height = nested.height + 1;
             acc.indexes = [[], ...nested.indexes];
           } else if (acc.height !== nested.height + 1) {
-            throw new Error('Nested array height is not consistent');
+            throw new UsageError('Nested array height is not consistent');
           }
           acc.indexes[0].push(acc.count);
           for (let k = 1; k < acc.height; k++) {
@@ -440,6 +451,61 @@ export class LazyArray<T = any> {
       },
       new Acc()
     ).indexes.reverse();
+  }
+
+  static with(arr: LazyArray) {
+    return new WithLazyArray(arr);
+  }
+}
+
+class WithLazyArray<T> {
+  withArr: LazyArray<T>;
+
+  constructor(withArr: LazyArray<T>) {
+    this.withArr = withArr;
+  }
+
+  find<U = any>(
+    target: LazyArray<U> | Reader<boolean>,
+    fn: (v: T, i: number) => boolean
+  ) {
+    const index = this.withArr.findIndex(fn);
+    return this._apply(target, index);
+  }
+
+  filter<U = any>(
+    target: LazyArray<U> | Reader<boolean>,
+    fn: (v: T, i: number) => boolean
+  ) {
+    const { indexMap } = this.withArr.filter(fn);
+    return this._apply(target, indexMap);
+  }
+
+  sort<U = any>(
+    target: LazyArray<U> | Reader<boolean>,
+    compare: (a: T, b: T) => number
+  ) {
+    const { indexMap } = this.withArr.sort(compare);
+    return this._apply(target, indexMap);
+  }
+
+  private _apply<U = any>(
+    target: LazyArray<U> | Reader<boolean>,
+    index: number | Int32Array
+  ) {
+    if (target instanceof LazyArray) {
+      return typeof index === 'number' ? target._get(index) : new LazyArray(target._get, index);
+    }
+
+    if (
+      target instanceof Reader &&
+      target.singleValue() &&
+      (target.isArray() || target.isMap())
+    ) {
+      return target.get(index as unknown as number[]);
+    }
+
+    throw new UsageError('Invalid target');
   }
 }
 
