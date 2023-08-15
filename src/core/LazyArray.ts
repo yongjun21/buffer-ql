@@ -465,6 +465,11 @@ class WithLazyArray<T> {
     this.withArr = withArr;
   }
 
+  index<U = any>(target: LazyArray<U> | Reader<boolean>) {
+    const index = this.withArr.indexMap;
+    return this._apply(target, index);
+  }
+
   find<U = any>(
     target: LazyArray<U> | Reader<boolean>,
     fn: (v: T, i: number) => boolean

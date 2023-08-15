@@ -4,7 +4,6 @@ import {
   decodeBitmask,
   forwardMapIndexes,
   forwardMapSingleIndex,
-  chainForwardIndexes,
   indexToOneOf,
   forwardMapOneOf,
   forwardMapSingleOneOf
@@ -195,20 +194,19 @@ export class Reader<T extends boolean = Single> {
       if (schemaKey in linkReaders) {
         currentStack.push([this.get(NULL_VALUE), parent, key]);
       } else {
-        const nextOffset = dataView.getInt32(
-          currentOffset + currentIndex * size,
-          true
-        );
-        const nextIndex = dataView.getInt32(
-          currentOffset + currentIndex * size,
-          true
-        );
+        const offset = currentOffset + currentIndex * size;
+        const nextOffset = dataView.getInt32(offset, true);
+        const nextIndex = dataView.getInt32(offset + 4, true);
         parent[key] = {
           is: 'Link',
           schema: schemaKey,
           type: nextType,
           offset: nextOffset,
-          atIndex: nextIndex
+          atIndex: nextIndex,
+          set: (_offset: number, _index: number) => {
+            dataView.setInt32(offset, _offset, true);
+            dataView.setInt32(offset + 4, _index, true);
+          }
         };
       }
     }
@@ -299,10 +297,9 @@ export class Reader<T extends boolean = Single> {
       const nextIndex = this.singleValue()
         ? forwardMapSingleIndex(bitmask, this.currentIndex)
         : chainForwardIndexes(
-            currentLength,
             currentIndex as Int32Array,
-            forwardMapIndexes(currentLength, bitmask)
-          ).asInt32Array();
+            forwardMapIndexes(currentLength, bitmask).asInt32Array()
+          );
 
       nextReader = new NextReader<boolean>(
         nextType,
@@ -391,7 +388,6 @@ export class Reader<T extends boolean = Single> {
     const nextOffset = isUndefined ? -1 : dataView.getInt32(offset, true);
     const nextLength = isUndefined ? 0 : dataView.getInt32(offset + 4, true);
 
-
     if (typeof i !== 'number') {
       if (i instanceof Int32Array) {
         return new NextReader(nextType, nextOffset, i, nextLength);
@@ -408,7 +404,7 @@ export class Reader<T extends boolean = Single> {
         const nextIndex = new Int32Array(i as number[]);
         return new NextReader(nextType, nextOffset, nextIndex, nextLength);
       }
-  
+
       if (i !== ALL_VALUES) {
         throw new UsageError(
           `Index must be a number, a set of numbers or ALL_VALUES`
@@ -460,7 +456,7 @@ export class Reader<T extends boolean = Single> {
         const nextIndex = new Int32Array((k as string[]).map(getIndex));
         return new NextReader(nextType, offsetToValues, nextIndex, nextLength);
       }
-  
+
       if (k !== ALL_VALUES && k !== ALL_KEYS) {
         throw new UsageError(
           `Key must be a string, a set of strings or ALL_VALUES or ALL_KEYS`
@@ -490,7 +486,7 @@ export class Reader<T extends boolean = Single> {
     const offset = currentOffset + atIndex * size;
     const nextOffset = isUndefined ? -1 : dataView.getInt32(offset, true);
     const nextIndex = isUndefined ? -1 : dataView.getInt32(offset + 4, true);
-    return new NextReader(nextType, nextOffset, nextIndex, 1);
+    return new NextReader(nextType, nextOffset, nextIndex, nextIndex + 1);
   }
 
   private _linkReaderGet(atIndex: number): Reader<boolean> {
@@ -506,7 +502,7 @@ export class Reader<T extends boolean = Single> {
 
     if (schemaKey in NextReader.linkedReaders) {
       const LinkedReader = NextReader.linkedReaders[schemaKey];
-      return new LinkedReader(nextType, nextOffset, nextIndex, 1);
+      return new LinkedReader(nextType, nextOffset, nextIndex, nextIndex + 1);
     } else {
       if (NextReader._getCalledInternally) {
         return this as Reader<boolean>;
@@ -733,4 +729,8 @@ export function linkReaders(Readers: Record<string, typeof Reader>) {
       Readers[keyB].addLink(keyA, Readers[keyA]);
     });
   });
+}
+
+function chainForwardIndexes(a: Int32Array, b: Int32Array) {
+  return a.map(i => (i < 0 ? -1 : b[i]));
 }
