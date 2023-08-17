@@ -22,7 +22,7 @@ function testBitmask() {
   const encoded = encodeBitmask(test, 256);
   console.log(encoded);
   const decoded = decodeBitmask(encoded, 256);
-  console.log(decoded);
+  console.log(decoded.asInt32Array());
   console.log(indexToBit(32, decoded).asUint8Array());
 
   const forwardIndexes = forwardMapIndexes(32, decoded).asInt32Array();

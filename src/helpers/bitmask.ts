@@ -56,7 +56,7 @@ export function encodeBitmask(iter: Iterable<number>, n: number) {
     const leafCount = POWER2[level] || Math.pow(2, level);
 
     if (next.done) {
-      length = writer(0);
+      writer(0);
       currIndex += leafCount;
       continue;
     }
@@ -66,7 +66,7 @@ export function encodeBitmask(iter: Iterable<number>, n: number) {
         length = writer(1);
         next = input.next();
       } else {
-        length = writer(0);
+        writer(0);
       }
       currIndex++;
     } else if (currIndex + leafCount > next.value) {
@@ -74,7 +74,7 @@ export function encodeBitmask(iter: Iterable<number>, n: number) {
       stack.push(level - 1);
       stack.push(level - 1);
     } else {
-      length = writer(0);
+      writer(0);
       currIndex += leafCount;
     }
   }
