@@ -1,3 +1,9 @@
+for (let n = 2; n <= 25; n++) {
+  console.log(getExpectedMoves(n));
+}
+// console.log(simulate(4, 1e6));
+// console.log(batchSimulate(24, 1600000));
+
 function updateState(curr, next) {
   let moves = 0;
   for (let i = 0; i <= next; i++) {
@@ -29,10 +35,11 @@ function simulate(classes, rounds) {
     movesTally += moves;
   }
 
+  const stateProb = [...stateTally].map(v => v / rounds);
   const avgMoves = movesTally / rounds;
   const avgInMoves = [...inMovesTally].map((v, i) => v / stateTally[i]);
 
-  return [stateTally, avgInMoves, avgMoves];
+  return [stateProb, avgInMoves, avgMoves];
 }
 
 function batchSimulate(batches, rounds) {
@@ -44,7 +51,51 @@ function batchSimulate(batches, rounds) {
   return results;
 }
 
-console.log(batchSimulate(24, 1600000))
+// closed form solution
+function getExpectedMoves(classes) {
+  const n = Math.pow(2, classes - 1);
+  const probs = new Float64Array(n);
+  let expectedMoves = 0;
+  probs[0] = 1;
+
+  for (let i = 0; i < classes - 1; i++) {
+    const k = Math.pow(2, i);
+    for (let j = k - 1; j >= 0; j--) {
+      probs[j * 2 + 1] = probs[j] * (classes - i - 1) / (classes - i);
+      probs[j * 2] = probs[j] * 1 / (classes - i);
+    }
+
+    let sumProb = 0;
+    let sumMoveProb = 0;
+    for (let j = 0; j < 2 * k; j++) {
+      let move = 0;
+      for (let b = 0; b < i + 1; b++) {
+        const bit = getBit(j, b);
+        if ((b === 0 && bit) || (b > 0 && !bit)) move++;
+      }
+      if (move === 0) continue;
+      sumProb += probs[j];
+      sumMoveProb += probs[j] * move;
+    }
+    expectedMoves += sumMoveProb / sumProb / classes;
+  }
+
+  let sumProb = 0;
+  let sumMoveProb = 0;
+  for (let j = 0; j < Math.pow(2, classes - 1); j++) {
+    let move = 0;
+    for (let b = 0; b < classes - 1; b++) {
+      const bit = getBit(j, b);
+      if (!bit) move++;
+    }
+    if (move === 0) continue;
+    sumProb += probs[j];
+    sumMoveProb += probs[j] * move;
+  }
+  expectedMoves += sumMoveProb / sumProb / classes;
+
+  return expectedMoves
+}
 
 function stateToKey(state) {
   let k = 1;
@@ -54,4 +105,8 @@ function stateToKey(state) {
     k *= 2;
   }
   return key;
+}
+
+function getBit(n, i) {
+  return n & (1 << i);
 }
