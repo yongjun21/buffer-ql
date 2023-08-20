@@ -1,4 +1,4 @@
-import { encodeBitmask } from './bitmask';
+import { encodeBitmask } from './bitmask.js';
 
 const textDecoder = new TextDecoder();
 

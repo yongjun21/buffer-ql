@@ -172,7 +172,7 @@ export class Reader<T extends boolean = Single> {
       parent[key] = {};
       for (let k = children.length - 1; k >= 0; k--) {
         const childKey = keys[k];
-        currentStack.push([this.get(key), parent[key], childKey]);
+        currentStack.push([this.get(childKey), parent[key], childKey]);
       }
     } else if (this.isArray()) {
       parent[key] = this.get(ALL_VALUES).value();
@@ -180,7 +180,8 @@ export class Reader<T extends boolean = Single> {
       const childKeys = this.get(ALL_KEYS).value<string>() as LazyArray<string>;
       parent[key] = {};
       for (let k = childKeys.length - 1; k >= 0; k--) {
-        currentStack.push([this.get(k), parent[key], childKeys.get(k)]);
+        const childKey = childKeys.get(k);
+        currentStack.push([this.get(childKey), parent[key], childKey]);
       }
     } else if (this.isOptional()) {
       currentStack.push([this.get(NULL_VALUE), parent, key]);

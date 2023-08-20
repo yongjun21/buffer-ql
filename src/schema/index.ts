@@ -4,8 +4,6 @@ import {
 } from './base.js';
 import { parseExpression } from './compound.js';
 
-import { typed } from '../helpers/common.js';
-
 import type {
   SchemaTypeModifierName,
   SchemaCompoundTypeExpression
@@ -49,10 +47,7 @@ export type SchemaTypeExpression<T extends string> =
   | SchemaBaseTypeName
   | SchemaCompoundTypeExpression<T | SchemaBaseTypeName>;
 
-export type SchemaTypeDefinition<T extends string = string> =
-  | SchemaTypeExpression<T>
-  | SchemaTypeExpression<T>[]
-  | Record<string, SchemaTypeExpression<T>>;
+type Nestable<T> = T | T[] | Record<string, T>;
 
 type SchemaType =
   | (SchemaPrimitiveType & { type: 'Primitive' })
@@ -61,7 +56,7 @@ type SchemaType =
 
 export type Schema = Record<string, SchemaType>;
 
-const SCHEMA_COMPOUND_TYPE_SIZE = {
+const SCHEMA_COMPOUND_TYPE_SIZE: Record<string, number> = {
   // offset + length
   Array: 8,
   // offset to keys + offset to values + length
@@ -84,9 +79,13 @@ const SCHEMA_COMPOUND_TYPE_SIZE = {
   NamedTuple: 4
 };
 
-export function extendSchema<T extends string, U extends T, V extends U>(
-  baseTypes: Record<V, SchemaPrimitiveType>,
-  types: { [_ in T]?: SchemaTypeDefinition<U> },
+export function extendSchema<
+  T extends string,
+  U extends T,
+  V extends SchemaTypeExpression<U>
+>(
+  baseTypes: { [_ in T]?: SchemaPrimitiveType },
+  types: { [_ in T]?: Nestable<V> },
   transforms: { [_ in T]?: (value: any) => any } = {},
   checks: { [_ in T]?: (value: any) => boolean } = {}
 ) {
@@ -103,39 +102,38 @@ export function extendSchema<T extends string, U extends T, V extends U>(
       size: SCHEMA_COMPOUND_TYPE_SIZE[record.type]
     };
   }
-  for (const [label, record] of Object.entries<SchemaPrimitiveType>(
-    baseTypes
-  )) {
+  for (const [label, record] of Object.entries(baseTypes)) {
     schema[label] = {
-      ...record,
+      ...(record as SchemaPrimitiveType),
       type: 'Primitive'
     };
   }
 
+  function addRecords(records: Record<string, SchemaType>) {
+    for (const [_label, _value] of Object.entries(records)) {
+      schema[_label] = {
+        ..._value,
+        size: SCHEMA_COMPOUND_TYPE_SIZE[_value.type],
+        transform: transforms[_label as T],
+        check: checks[_label as T]
+      } as SchemaType;
+    }
+  }
+
   for (const [label, value] of Object.entries<any>(types)) {
     if (typeof value === 'string') {
-      for (const [_label, _value] of Object.entries(
-        parseExpression(label, value)
-      )) {
-        schema[_label] = {
-          ..._value,
-          size: SCHEMA_COMPOUND_TYPE_SIZE[_value.type],
-          transform: transforms[_label as T],
-          check: checks[_label as T]
-        } as SchemaType;
-      }
+      addRecords(parseExpression(label, value) as Record<string, SchemaType>);
     } else if (Array.isArray(value!)) {
       const record: SchemaType = {
         type: 'Tuple',
         children: [],
-        size: SCHEMA_COMPOUND_TYPE_SIZE.Tuple,
-        check: typed<SchemaTypeChecker>(Array.isArray)
+        size: SCHEMA_COMPOUND_TYPE_SIZE.Tuple
       };
-      schema[label] = record;
+      addRecords({ [label]: record });
       value.forEach((exp, i) => {
         const _label = `${label}[${i}]`;
         record.children.push(_label);
-        Object.assign(schema, parseExpression(_label, exp));
+        addRecords(parseExpression(_label, exp) as Record<string, SchemaType>);
       });
     } else {
       const record: SchemaType = {
@@ -145,13 +143,13 @@ export function extendSchema<T extends string, U extends T, V extends U>(
         indexes: {},
         size: SCHEMA_COMPOUND_TYPE_SIZE.NamedTuple
       };
-      schema[label] = record;
+      addRecords({ [label]: record });
       Object.entries<string>(value).forEach(([key, exp], i) => {
         const _label = `${label}.${key}`;
         record.children.push(_label);
         record.keys.push(key);
         record.indexes[key] = i;
-        Object.assign(schema, parseExpression(_label, exp));
+        addRecords(parseExpression(_label, exp) as Record<string, SchemaType>);
       });
     }
   }

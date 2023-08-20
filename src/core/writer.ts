@@ -1,14 +1,14 @@
 /* eslint-disable dot-notation */
-import { LazyArray } from './LazyArray';
+import { LazyArray } from './LazyArray.js';
 import {
   bitToIndex,
   oneOfToIndex,
   backwardMapIndexes,
   backwardMapOneOf
-} from '../helpers/bitmask';
-import { createStringWriter, createBitmaskWriter } from '../helpers/io';
+} from '../helpers/bitmask.js';
+import { createStringWriter, createBitmaskWriter } from '../helpers/io.js';
 
-import { ValueError } from '../helpers/error';
+import { ValueError } from '../helpers/error.js';
 
 import type {
   Schema,
@@ -138,7 +138,7 @@ export function encodeWithSchema(data: any, schema: Schema, rootType: string) {
         const currentLength = currentSource.length;
 
         const discriminator = currentSource.map(value =>
-          value == null ? 1 : 0
+          value == null ? 0 : 1
         );
 
         const bitmask = bitToIndex(discriminator);
@@ -226,39 +226,52 @@ export function encodeWithSchema(data: any, schema: Schema, rootType: string) {
           const offset = currentOffset + i * size;
           encode(dataView, offset, value, ...args);
         });
-
       } else if (this.isTuple() || this.isNamedTuple()) {
         const { size } = currentType as SchemaCompoundType<'Tuple'>;
         branches.forEach((branch, i) => {
           const offset = currentOffset + i * size;
           dataView.setUint32(offset, branch.currentOffset, true);
         });
-
       } else if (this.isArray()) {
         const { size } = currentType as SchemaCompoundType<'Array'>;
-        const [valWriterGroup] = branches as [WriterGroup];
-        valWriterGroup.writers.forEach((child, i) => {
-          const offset = currentOffset + i * size;
+        const [valWriterGroup] = branches as [Writer];
+        if (valWriterGroup instanceof WriterGroup) {
+          valWriterGroup.writers.forEach((child, i) => {
+            const offset = currentOffset + i * size;
+            dataView.setUint32(offset, child.currentOffset, true);
+            dataView.setUint32(offset + 4, child.currentSource.length, true);
+          });
+        } else {
+          const offset = currentOffset;
+          const child = valWriterGroup;
           dataView.setUint32(offset, child.currentOffset, true);
           dataView.setUint32(offset + 4, child.currentSource.length, true);
-        });
-
+        }
       } else if (this.isMap()) {
         const { size } = currentType as SchemaCompoundType<'Map'>;
-        const [keyWriterGroup, valWriterGroup] = branches as [
-          WriterGroup,
-          WriterGroup
-        ];
-        keyWriterGroup.writers.forEach((child, i) => {
-          const offset = currentOffset + i * size;
+        const [keyWriterGroup, valWriterGroup] = branches as [Writer, Writer];
+        if (keyWriterGroup instanceof WriterGroup) {
+          keyWriterGroup.writers.forEach((child, i) => {
+            const offset = currentOffset + i * size;
+            dataView.setUint32(offset, child.currentOffset, true);
+          });
+        } else {
+          const offset = currentOffset;
+          const child = keyWriterGroup;
           dataView.setUint32(offset, child.currentOffset, true);
-        });
-        valWriterGroup.writers.forEach((child, i) => {
-          const offset = currentOffset + i * size + 4;
+        }
+        if (valWriterGroup instanceof WriterGroup) {
+          valWriterGroup.writers.forEach((child, i) => {
+            const offset = currentOffset + i * size;
+            dataView.setUint32(offset + 4, child.currentOffset, true);
+            dataView.setUint32(offset + 8, child.currentSource.length, true);
+          });
+        } else {
+          const offset = currentOffset;
+          const child = valWriterGroup;
           dataView.setUint32(offset + 4, child.currentOffset, true);
           dataView.setUint32(offset + 8, child.currentSource.length, true);
-        });
-
+        }
       } else if (this.isOptional()) {
         const bitmaskWriter: ReturnType<typeof createBitmaskWriter> = args[0];
         const [valWriter] = branches as [Writer];
@@ -270,7 +283,6 @@ export function encodeWithSchema(data: any, schema: Schema, rootType: string) {
         dataView.setUint32(currentOffset, bitmaskOffset, true);
         dataView.setUint32(currentOffset + 4, bitmaskLength, true);
         dataView.setUint32(currentOffset + 8, valWriter.currentOffset, true);
-
       } else if (this.isOneOf()) {
         const bitmaskWriter: ReturnType<typeof createBitmaskWriter> = args[0];
         const { size } = currentType as SchemaCompoundType<'OneOf'>;
@@ -286,7 +298,6 @@ export function encodeWithSchema(data: any, schema: Schema, rootType: string) {
             dataView.setUint32(offset + 8, bitmaskLength, true);
           }
         });
-
       } else if (this.isRef()) {
         const { size } = currentType as SchemaCompoundType<'Ref'>;
         currentSource.forEach((value, i) => {

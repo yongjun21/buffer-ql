@@ -40,14 +40,11 @@ const VALID_TRANSITIONS = {
 type TokenState = keyof typeof VALID_TRANSITIONS;
 
 export function parseExpression(label: string, exp: string) {
-  type Parsed = Omit<
-    SchemaCompoundType<SchemaTypeModifierName | 'Alias'>,
-    'size'
-  >;
+  type Parsed = Omit<SchemaCompoundType<string>, 'size'>;
 
   const parsed: Record<string, Parsed> = {};
   const tokenized: [TokenState, string][] = [];
-  const pattern = /((Array|Map|Optional|OneOf|Link)<)|([A-Za-z0-9_/]+)|(,|>)/y;
+  const pattern = /((Array|Map|Optional|OneOf|Ref|Link)<)|([A-Za-z0-9_/]+)|(,|>)/y;
   let matched: RegExpExecArray | null;
   while ((matched = pattern.exec(exp)) != null) {
     if (matched[1]) {
