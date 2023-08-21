@@ -31,7 +31,7 @@ export function encodeWithSchema(data: any, schema: Schema, rootType: string) {
       this.currentType = schema[type];
       this.currentSource = source;
 
-      if (isReference.has(type) && !(this instanceof WriterGroup)) {
+      if (this.currentType.ref && !(this instanceof WriterGroup)) {
         source.forEach((value, i) => references.set(value, [this, i]));
       }
     }
@@ -68,12 +68,21 @@ export function encodeWithSchema(data: any, schema: Schema, rootType: string) {
       return this.currentType.type === 'Ref';
     }
 
+    isLink() {
+      return this.currentType.type === 'Link';
+    }
+
     isNull() {
       return this.currentSource.length === 0;
     }
 
     spawn() {
-      if (this.isPrimitive() || this.isRef() || this.isNull()) {
+      if (
+        this.isPrimitive() ||
+        this.isRef() ||
+        this.isLink() ||
+        this.isNull()
+      ) {
         return [];
       }
 
@@ -185,7 +194,7 @@ export function encodeWithSchema(data: any, schema: Schema, rootType: string) {
       if (this.isNull()) return offset;
 
       const { currentType, currentSource, branches } = this;
-      
+
       if (this.isPrimitive()) {
         // align offset to multiples of size
         offset = Math.ceil(offset / currentType.size) * currentType.size;
@@ -196,6 +205,7 @@ export function encodeWithSchema(data: any, schema: Schema, rootType: string) {
       if (
         this.isPrimitive() ||
         this.isRef() ||
+        this.isLink() ||
         this.isArray() ||
         this.isMap()
       ) {
@@ -316,6 +326,13 @@ export function encodeWithSchema(data: any, schema: Schema, rootType: string) {
           dataView.setUint32(offset, writer.currentOffset, true);
           dataView.setUint32(offset + 4, index, true);
         });
+      } else if (this.isLink()) {
+        const { size } = currentType as SchemaCompoundType<'Link'>;
+        currentSource.forEach((_, i) => {
+          const offset = currentOffset + i * size;
+          dataView.setUint32(offset, -1, true);
+          dataView.setUint32(offset + 4, -1, true);
+        });
       }
     }
   }
@@ -360,13 +377,6 @@ export function encodeWithSchema(data: any, schema: Schema, rootType: string) {
       }
     }
   }
-
-  const isReference = new Set<string>();
-  Object.values(schema).forEach(record => {
-    if (record.type === 'Ref') {
-      isReference.add(record.children[0]);
-    }
-  });
 
   const references = new Map<any, [Writer, number]>();
 

@@ -21,16 +21,12 @@ export interface SchemaPrimitiveType {
   size: number;
   decode: SchemaTypeDecoder<any>;
   encode: SchemaTypeEncoder<any>;
-  transform?: (value: any) => any;
-  check?: SchemaTypeChecker;
 }
 
 export interface SchemaCompoundType<T extends string> {
   type: T;
   size: number;
   children: string[];
-  transform?: (value: any) => any;
-  check?: SchemaTypeChecker;
 }
 
 export interface SchemaNamedTupleType extends SchemaCompoundType<'NamedTuple'> {
@@ -49,10 +45,15 @@ export type SchemaTypeExpression<T extends string> =
 
 type Nestable<T> = T | T[] | Record<string, T>;
 
-type SchemaType =
+type SchemaType = (
   | (SchemaPrimitiveType & { type: 'Primitive' })
   | SchemaCompoundType<SchemaTypeModifierName | 'Tuple' | 'Alias'>
-  | SchemaNamedTupleType;
+  | SchemaNamedTupleType
+) & {
+  transform?: (value: any) => any;
+  check?: SchemaTypeChecker;
+  ref?: boolean;
+};
 
 export type Schema = Record<string, SchemaType>;
 
@@ -156,6 +157,7 @@ export function extendSchema<
 
   validateSchema(schema);
   forwardAlias(schema);
+  markRefs(schema);
   return schema;
 }
 
@@ -211,9 +213,9 @@ function validateSchema(schema: Schema) {
     }
 
     if (record.type === 'Ref') {
-      if (schema[record.children[0]].type === 'Ref') {
+      if (!['Tuple', 'NamedTuple', 'Array', 'Map'].includes(schema[record.children[0]].type)) {
         throw new TypeError(
-          `Modifier type Ref should not reference another Ref`
+          `Modifier type Ref should be used only on Tuple, NamedTuple, Array or Map`
         );
       }
     }
@@ -242,4 +244,12 @@ function forwardAlias(schema: Schema, replaced = 0) {
     }
   }
   if (count > 0) forwardAlias(schema, replaced + count);
+}
+
+function markRefs(schema: Schema) {
+  for (const [_, record] of Object.entries(schema)) {
+    if (record.type === 'Ref') {
+      schema[record.children[0]].ref = true;
+    }
+  }
 }
