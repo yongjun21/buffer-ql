@@ -184,8 +184,14 @@ export function encodeWithSchema(data: any, schema: Schema, rootType: string) {
     allocate(offset: number) {
       if (this.isNull()) return offset;
 
-      this.currentOffset = offset;
       const { currentType, currentSource, branches } = this;
+      
+      if (this.isPrimitive()) {
+        // align offset to multiples of size
+        offset = Math.ceil(offset / currentType.size) * currentType.size;
+      }
+
+      this.currentOffset = offset;
 
       if (
         this.isPrimitive() ||
@@ -397,8 +403,8 @@ export function encodeWithSchema(data: any, schema: Schema, rootType: string) {
   const stringBuffer = stringWriter.export();
 
   const bitmaskWriter = createBitmaskWriter(offset + stringBuffer.length);
-  for (const [type, writers] of Object.entries(orderedWriters)) {
-    if (type === 'String') continue;
+  for (const [typeName, writers] of Object.entries(orderedWriters)) {
+    if (typeName === 'String') continue;
     for (const writer of writers) {
       writer.write(dv, bitmaskWriter);
     }

@@ -104,24 +104,22 @@ export function oneOfToIndex(
 ): Iterable<number>[] {
   const iters: Iterable<number>[] = [];
   for (let k = 0; k < noOfClass - 1; k++) {
-    iters.push(
-      bitToIndex({
-        *[Symbol.iterator]() {
-          let index = 0;
-          let curr = 0;
-          for (const n of iter) {
-            if (n >= k) {
-              const b = n > k ? 1 : 0;
-              if (b !== curr) {
-                yield index;
-                curr = b;
-              }
-              index++;
+    iters.push({
+      *[Symbol.iterator]() {
+        let index = 0;
+        let curr = 0;
+        for (const n of iter) {
+          if (n >= k) {
+            const b = n > k ? 1 : 0;
+            if (b !== curr) {
+              yield index;
+              curr = b;
             }
+            index++;
           }
         }
-      })
-    );
+      },
+    });
   }
   return iters;
 }

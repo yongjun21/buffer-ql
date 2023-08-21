@@ -3,8 +3,8 @@ import { encodeBitmask } from './bitmask.js';
 const textDecoder = new TextDecoder();
 
 export function readString(dv: DataView, offset: number) {
-  const _offset = dv.getFloat32(offset, true);
-  const _length = dv.getFloat32(offset + 4, true);
+  const _offset = dv.getInt32(offset, true);
+  const _length = dv.getInt32(offset + 4, true);
   return textDecoder.decode(new Uint8Array(dv.buffer, _offset, _length));
 }
 
