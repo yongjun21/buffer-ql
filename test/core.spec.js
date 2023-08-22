@@ -17,12 +17,15 @@ const encoded = encodeWithSchema(DUMMY_DATA, SCHEMA, '#');
 const Reader = createReader(encoded.buffer, SCHEMA);
 
 const reader = new Reader('#', 0)
-  .get('trackedEntitiesOfInterest')
-  .get('nearest')
+  .get('trackedEntities')
+  .get([0, 1, 2, 3])
   .get('waypoints')
   .get(ALL_VALUES)
-  .get('probability');
+  .get('pose')
+  .get('position');
 
-const decoded = reader.value()?.copyTo(Array);
+const decoded = reader.value()?.map(v => v?.copyTo(Array)).copyTo(Array);
+const dumped = reader.dump().slice();
 
 console.log(decoded);
+console.log(new Float32Array(dumped.buffer))

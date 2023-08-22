@@ -74,7 +74,7 @@ export function parseExpression(label: string, exp: string) {
         children: []
       };
       const next = { label, record };
-      label += "'";
+      label += `(${token})`;
       parsed[next.label] = next.record;
 
       if (curr) stack.push(curr);

@@ -62,7 +62,7 @@ export class Reader<T extends boolean = Single> {
     if (isBaseReader && !(type in schema)) {
       throw new TypeError(`Missing type definition ${type} in schema`);
     }
-    
+
     this.typeName = type;
     this.currentType = schema[type];
     this.currentOffset = offset;
@@ -130,18 +130,38 @@ export class Reader<T extends boolean = Single> {
   }
 
   value<U = any>(): ValueReturnType<U, T> | undefined {
+    if (this.isPrimitive()) {
+      return this.singleValue()
+        ? this._primitiveValueAt(this.currentIndex)
+        : new LazyArray<U>(
+            i => this._primitiveValueAt(i),
+            this.currentIndex as Int32Array
+          );
+    }
     const refCache = createRefCache();
     return (
       this.singleValue()
-        ? this._valueAt(this.currentIndex, refCache)
+        ? this._compoundValueAt(this.currentIndex, refCache)
         : new LazyArray<U>(
-            i => this._valueAt(i, refCache),
+            i => this._compoundValueAt(i, refCache),
             this.currentIndex as Int32Array
           )
     ) as ValueReturnType<U, T>;
   }
 
-  private _valueAt<U = any>(atIndex: number, refCache = createRefCache()): U {
+  private _primitiveValueAt(atIndex: number) {
+    if (this.isUndefined(atIndex)) return;
+    const NextReader = this.constructor as typeof Reader;
+    const { dataView } = NextReader;
+    const { currentType, currentOffset } = this;
+    const { size, decode } = currentType as SchemaPrimitiveType;
+    return decode(dataView, currentOffset + atIndex * size);
+  }
+
+  private _compoundValueAt<U = any>(
+    atIndex: number,
+    refCache = createRefCache()
+  ): U {
     const root: U[] = [];
     const currentStack: ValueCallStack<Reader<boolean>> = [];
     if (atIndex === this.currentIndex) {
@@ -171,8 +191,6 @@ export class Reader<T extends boolean = Single> {
     if (!this.singleValue()) return;
     if (this.isUndefined()) return;
 
-    const NextReader = this.constructor as typeof Reader;
-    const { dataView } = NextReader;
     const { currentType, currentOffset, currentIndex } = this;
 
     let setCache: (value: any) => void = v => v;
@@ -187,8 +205,7 @@ export class Reader<T extends boolean = Single> {
     }
 
     if (this.isPrimitive()) {
-      const { size, decode } = currentType as SchemaPrimitiveType;
-      parent[key] = decode(dataView, currentOffset + currentIndex * size);
+      parent[key] = this._primitiveValueAt(currentIndex);
     } else if (this.isTuple()) {
       const { children } = currentType as SchemaCompoundType<'Tuple'>;
       parent[key] = setCache([]);
@@ -332,7 +349,13 @@ export class Reader<T extends boolean = Single> {
     if (!this.isPrimitive()) {
       throw new UsageError('Calling dump on a non-primitive type');
     }
-    const NextReader = this.constructor as typeof Reader;
+    const NextReader = (
+      this instanceof NestedReader
+        ? this.ref.constructor
+        : this instanceof BranchedReader
+        ? this.branches[this.currentBranch].constructor
+        : this.constructor
+    ) as typeof Reader;
     const { dataView } = NextReader;
     const [offset, length] = this._computeDump();
     return length > 0
@@ -345,7 +368,7 @@ export class Reader<T extends boolean = Single> {
     const { size } = currentType as SchemaPrimitiveType;
 
     if (this.singleValue()) {
-      const index = currentIndex as number;
+      const index = this.currentIndex as number;
       return index < 0 || index >= currentLength
         ? [-1, 0]
         : [currentOffset + index * size, size];
@@ -358,11 +381,11 @@ export class Reader<T extends boolean = Single> {
       if (index < 0 || index >= currentLength) continue;
       if (offset < 0) {
         offset = currentOffset + index * size;
-        lastIndex = index;
       } else if (index > lastIndex + 1) {
         throw new UsageError('Calling dump on non-contiguous block');
       }
       length += size;
+      lastIndex = index;
     }
     return [offset, length];
   }
@@ -513,12 +536,14 @@ class NestedReader extends Reader<Multiple> {
   readers: NestedLazyArray<Reader<boolean>>;
   ref: Reader<boolean>;
 
-  constructor(readers: NestedLazyArray<Reader<boolean>>) {
-    const ref = LazyArray.nestedReduce(
+  constructor(
+    readers: NestedLazyArray<Reader<boolean>>,
+    ref = LazyArray.nestedReduce(
       readers,
       (acc, getReader) => acc || getReader(),
       undefined as Reader<boolean> | undefined
-    );
+    )
+  ) {
     if (!ref) {
       throw new InternalError('Cannot create empty NestedReader');
     }
@@ -554,13 +579,14 @@ class NestedReader extends Reader<Multiple> {
   }
 
   get<K extends Key>(key: K) {
-    const readers = LazyArray.nestedMap(this.readers, reader => {
+    const nextReaders = LazyArray.nestedMap(this.readers, reader => {
       const nextReader = reader.get(key);
       return (
         nextReader instanceof NestedReader ? nextReader.readers : nextReader
       ) as Reader<boolean>;
     });
-    return new NestedReader(readers);
+    const nextRef = this.ref.get(key);
+    return new NestedReader(nextReaders, nextRef);
   }
 
   _computeDump() {

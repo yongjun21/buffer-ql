@@ -44,9 +44,9 @@ function generateTrackedEntityWayPointsArray(count) {
 
 function generatePose() {
   return {
-    Position: generateVector3(),
-    Rotation: generateVector3(),
-    Size: generateVector3()
+    position: generateVector3(),
+    rotation: generateVector3(),
+    size: generateVector3()
   };
 }
 
