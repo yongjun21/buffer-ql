@@ -25,16 +25,17 @@ const waypointsPoseReader = waypointsReader.get(ALL_VALUES).get('pose').get('pos
 
 const trackedEntitiesSourceIdReader = trackedEntitiesReader.get(ALL_VALUES).get('source').get(1);
 
-const decoded = waypointsPoseReader.value();
+const decoded = waypointsPoseReader.value(true);
 const dumped = waypointsPoseReader.dump(Float32Array);
 
-const collapsed = LazyArray.nestedFilter(decoded, v => v != null);
+const collapsed = LazyArray.iterateNested(decoded, v => v != null);
 
-// console.log(decoded);
-// console.log(dumped);
-// console.log(LazyArray.getFlattenedIndexes(collapsed)[0]);
-// console.log(LazyArray.getNestedSize(collapsed));
-// console.log(LazyArray.getNestedDepth(collapsed));
-// console.log([...LazyArray.iterateNested(collapsed)]);
+console.log(decoded);
+console.log([...collapsed]);
+console.log([...collapsed.indexes])
+
+console.log(dumped);
+console.log(LazyArray.getNestedSize(decoded, v => v != null));
+console.log(LazyArray.getNestedDepth(decoded));
 
 console.log(trackedEntitiesSourceIdReader.value());

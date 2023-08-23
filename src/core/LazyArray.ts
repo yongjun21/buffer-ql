@@ -408,24 +408,54 @@ export class LazyArray<T = any> {
       });
   }
 
-  static iterateNested<T>(arr: LazyArray<T | LazyArray<T>>) {
+  static iterateNested<T>(
+    arr: LazyArray<T | LazyArray<T>>,
+    filter: (v: T) => boolean = () => true,
+    yieldFromLevel = 0
+  ) {
+    function* _iterate(
+      arr: LazyArray<T | LazyArray<T>>,
+      yieldFromLevel: number,
+      acc: { index: number }
+    ): IterableIterator<[T, number]> {
+      for (const nested of arr) {
+        if (nested instanceof LazyArray) {
+          yield* _iterate(nested, yieldFromLevel - 1, acc);
+        } else {
+          if (yieldFromLevel <= 0 && filter(nested)) {
+            yield [nested, acc.index];
+            acc.index++;
+          }
+        }
+        if (yieldFromLevel === 0) acc.index = 0;
+      }
+    }
+
     return {
-      *[Symbol.iterator](): IterableIterator<T> {
-        for (const nested of arr) {
-          if (nested instanceof LazyArray) {
-            yield* LazyArray.iterateNested(nested);
-          } else {
-            yield nested;
+      *[Symbol.iterator]() {
+        for (const [v] of _iterate(arr, yieldFromLevel, { index: 0 })) yield v;
+      },
+      get indexes () {
+        return {
+          *[Symbol.iterator]() {
+            let index = 0;
+            for (const [_, i] of _iterate(arr, yieldFromLevel, { index: 0 })) {
+              if (i === 0) yield index;
+              index++;
+            }
           }
         }
       }
     };
   }
 
-  static getNestedSize<T>(arr: LazyArray<T | LazyArray<T>>) {
+  static getNestedSize<T>(
+    arr: LazyArray<T | LazyArray<T>>,
+    filter: (v: T) => boolean = () => true
+  ) {
     return this.nestedReduce(
       arr,
-      acc => acc + 1,
+      (acc, v) => acc + (filter(v) ? 1 : 0),
       (acc, u) => acc + u,
       0
     );
@@ -438,37 +468,6 @@ export class LazyArray<T = any> {
       (acc, u) => Math.max(acc, u + 1),
       0
     );
-  }
-
-  static getFlattenedIndexes<T>(arr: LazyArray<T | LazyArray<T>>): number[][] {
-    const init = { count: 0, height: 0, indexes: [] as number[][] };
-    return this.nestedReduce(
-      arr,
-      ({ count, height, indexes }) => {
-        if (height > 0) {
-          throw new UsageError('Nested array height is not consistent');
-        }
-        return { count: count + 1, height, indexes };
-      },
-      (acc, u) => {
-        let { count, height, indexes } = acc;
-        if (acc === init) {
-          height = u.height + 1;
-          indexes = [[], ...u.indexes];
-        } else if (height !== u.height + 1) {
-          throw new UsageError('Nested array height is not consistent');
-        }
-        indexes[0].push(count);
-        for (let k = 1; k < height; k++) {
-          for (const i of u.indexes[k - 1]) {
-            indexes[k].push(i + count);
-          }
-        }
-        count += u.count;
-        return { count, height, indexes };
-      },
-      init
-    ).indexes.reverse();
   }
 
   static with(arr: LazyArray) {

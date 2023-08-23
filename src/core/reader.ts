@@ -127,7 +127,7 @@ export class Reader<T extends boolean = Single> {
     );
   }
 
-  isBranched(): this is BranchedReader {
+  isBranched(): this is BranchedReader<T> {
     return false;
   }
 
@@ -317,7 +317,10 @@ export class Reader<T extends boolean = Single> {
         ? forwardMapSingleIndex(bitmask, this.currentIndex)
         : chainForwardIndexes(
             currentIndex as Int32Array,
-            forwardMapIndexes(currentLength, bitmask).asInt32Array()
+            forwardMapIndexes(
+              getMaxIndex(currentIndex as Int32Array) + 1,
+              bitmask
+            ).asInt32Array()
           );
 
       return new NextReader<boolean>(
@@ -342,7 +345,10 @@ export class Reader<T extends boolean = Single> {
         return this._linkReaderGet(this.currentIndex);
       } else {
         return new NestedReader(
-          new LazyArray(i => this._linkReaderGet(i), currentIndex as Int32Array),
+          new LazyArray(
+            i => this._linkReaderGet(i),
+            currentIndex as Int32Array
+          ),
           this._linkReaderGet(-1)
         ) as Reader<boolean>;
       }
@@ -546,10 +552,7 @@ class NestedReader extends Reader<Multiple> {
   readers: NestedLazyArray<Reader<boolean>>;
   ref: Reader<boolean>;
 
-  constructor(
-    readers: NestedLazyArray<Reader<boolean>>,
-    ref: Reader<boolean>
-  ) {
+  constructor(readers: NestedLazyArray<Reader<boolean>>, ref: Reader<boolean>) {
     super(ref.typeName, ref.currentOffset, ref.currentIndex, ref.currentLength);
     this.currentType = ref.currentType;
     this.readers = readers;
@@ -569,10 +572,9 @@ class NestedReader extends Reader<Multiple> {
     LazyArray.nestedForEach(this.readers, reader => {
       if (reader.isBranched()) reader.switchBranch(branchIndex);
     });
-    (this.ref as BranchedReader).switchBranch(branchIndex);
+    (this.ref as BranchedReader<boolean>).switchBranch(branchIndex);
     this.typeName = this.ref.typeName;
     this.currentType = this.ref.currentType;
-    this.currentOffset = this.ref.currentOffset;
     return this;
   }
 
@@ -582,7 +584,7 @@ class NestedReader extends Reader<Multiple> {
     ) as ValueReturnType<U, Multiple>;
   }
 
-  get<K extends Key>(key: K) {
+  get(key: Key) {
     const nextReaders = LazyArray.nestedMap(this.readers, reader => {
       const nextReader = reader.get(key);
       return (
@@ -609,17 +611,17 @@ class NestedReader extends Reader<Multiple> {
   }
 }
 
-class BranchedReader extends Reader<Multiple> {
-  branches: Reader<Multiple>[];
+class BranchedReader<T extends boolean> extends Reader<T> {
+  branches: Reader<T>[];
   currentBranch: number;
-  discriminator: Uint8Array;
-  rootIndex: Int32Array;
+  discriminator: T extends Single ? number : Uint8Array;
+  rootIndex: IndexType<T>;
 
   constructor(
-    branches: Reader<Multiple>[],
+    branches: Reader<T>[],
     currentBranch: number,
-    discriminator: Uint8Array,
-    rootIndex: Int32Array
+    discriminator: T extends Single ? number : Uint8Array,
+    rootIndex: IndexType<T>
   ) {
     const branch = branches[currentBranch];
     super(
@@ -651,17 +653,21 @@ class BranchedReader extends Reader<Multiple> {
 
   value<U = any>() {
     const { discriminator, rootIndex } = this;
-    const branchValues = this.branches.map(branch => branch.value());
-    const getter = (i: number) => {
-      const branchIndex = discriminator[i];
-      if (branchIndex == null) return undefined;
-      return branchValues[branchIndex]?.get(i);
-    };
-    return new LazyArray<U>(getter, rootIndex);
+    if (this.singleValue()) {
+      return this.branches[discriminator as number].value();
+    } else {
+      const branchValues = this.branches.map(branch => branch.value());
+      const getter = (i: number) => {
+        const branchIndex = (discriminator as Uint8Array)[i];
+        if (branchIndex == null) return undefined;
+        return branchValues[branchIndex]?.get(i);
+      };
+      return new LazyArray<U>(getter, rootIndex);
+    }
   }
 
-  get(key: Key) {
-    const next = super.get(key);
+  get(key: Key): Reader<boolean> {
+    const next = super.get(key) as Reader<T>;
     const nextBranches = [...this.branches];
     nextBranches[this.currentBranch] = next;
     return new BranchedReader(
@@ -697,20 +703,34 @@ class BranchedReader extends Reader<Multiple> {
     }
 
     if (root.singleValue()) {
-      const [discriminator, nextIndex] = forwardMapSingleOneOf(
-        currentIndex as number,
+      const _currentIndex = currentIndex as number;
+
+      const [discriminator, branchNextIndex] = forwardMapSingleOneOf(
+        _currentIndex,
         ...bitmasks
       );
-      const nextType = children[discriminator];
-      const offset = currentOffset + discriminator * size;
-      const nextOffset = dataView.getInt32(offset, true);
-      return new NextReader(nextType, nextOffset, nextIndex, currentLength);
+
+      const branches = children.map((nextType, i) => {
+        const offset = currentOffset + i * size;
+        const nextOffset = dataView.getInt32(offset, true);
+        return new NextReader<Single>(
+          nextType,
+          nextOffset,
+          i === discriminator ? branchNextIndex : -1,
+          currentLength
+        );
+      });
+
+      return new BranchedReader(branches, 0, discriminator, _currentIndex);
     } else {
+      const _currentIndex = currentIndex as Int32Array;
+      const maxIndex = getMaxIndex(_currentIndex);
+
       const discriminator = indexToOneOf(
-        currentLength,
+        maxIndex + 1,
         ...bitmasks
       ).asUint8Array();
-      const forwardMaps = forwardMapOneOf(currentLength, ...bitmasks);
+      const forwardMaps = forwardMapOneOf(maxIndex + 1, ...bitmasks);
 
       const branches = children.map((nextType, i) => {
         const nextIndex = forwardMaps[i].asInt32Array();
@@ -724,12 +744,7 @@ class BranchedReader extends Reader<Multiple> {
         );
       });
 
-      return new BranchedReader(
-        branches,
-        0,
-        discriminator,
-        currentIndex as Int32Array
-      );
+      return new BranchedReader(branches, 0, discriminator, _currentIndex);
     }
   }
 }
@@ -771,6 +786,14 @@ function createRefCache() {
       };
     }
   };
+}
+
+function getMaxIndex(indexes: Int32Array) {
+  let max = -1;
+  for (const i of indexes) {
+    if (i > max) max = i;
+  }
+  return max;
 }
 
 function chainForwardIndexes(a: Int32Array, b: Int32Array) {
