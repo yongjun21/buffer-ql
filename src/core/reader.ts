@@ -19,6 +19,8 @@ import type {
   SchemaNamedTupleType
 } from '../schema/index.js';
 
+import type { TypedArrayConstructor } from '../types/common.js';
+
 type Single = true;
 type Multiple = false;
 type IndexType<T extends boolean> = T extends Single ? number : Int32Array;
@@ -281,7 +283,8 @@ export class Reader<T extends boolean = Single> {
           new LazyArray(
             i => this._arrayReaderGet(i, key),
             currentIndex as Int32Array
-          )
+          ),
+          this._arrayReaderGet(-1, key)
         ) as Reader<boolean>;
       }
     } else if (this.isMap()) {
@@ -292,7 +295,8 @@ export class Reader<T extends boolean = Single> {
           new LazyArray(
             i => this._mapReaderGet(i, key),
             currentIndex as Int32Array
-          )
+          ),
+          this._mapReaderGet(-1, key)
         ) as Reader<boolean>;
       }
     } else if (this.isOptional()) {
@@ -329,7 +333,8 @@ export class Reader<T extends boolean = Single> {
         return this._refReaderGet(this.currentIndex);
       } else {
         return new NestedReader(
-          new LazyArray(i => this._refReaderGet(i), currentIndex as Int32Array)
+          new LazyArray(i => this._refReaderGet(i), currentIndex as Int32Array),
+          this._refReaderGet(-1)
         ) as Reader<boolean>;
       }
     } else if (this.isLink()) {
@@ -337,7 +342,8 @@ export class Reader<T extends boolean = Single> {
         return this._linkReaderGet(this.currentIndex);
       } else {
         return new NestedReader(
-          new LazyArray(i => this._linkReaderGet(i), currentIndex as Int32Array)
+          new LazyArray(i => this._linkReaderGet(i), currentIndex as Int32Array),
+          this._linkReaderGet(-1)
         ) as Reader<boolean>;
       }
     } else {
@@ -345,7 +351,7 @@ export class Reader<T extends boolean = Single> {
     }
   }
 
-  dump() {
+  dump(TypedArray: TypedArrayConstructor = Uint8Array) {
     if (!this.isPrimitive()) {
       throw new UsageError('Calling dump on a non-primitive type');
     }
@@ -359,8 +365,12 @@ export class Reader<T extends boolean = Single> {
     const { dataView } = NextReader;
     const [offset, length] = this._computeDump();
     return length > 0
-      ? new Uint8Array(dataView.buffer, offset, length)
-      : new Uint8Array(0);
+      ? new TypedArray(
+          dataView.buffer,
+          offset,
+          length / TypedArray.BYTES_PER_ELEMENT
+        )
+      : new TypedArray(0);
   }
 
   protected _computeDump() {
@@ -538,15 +548,8 @@ class NestedReader extends Reader<Multiple> {
 
   constructor(
     readers: NestedLazyArray<Reader<boolean>>,
-    ref = LazyArray.nestedReduce(
-      readers,
-      (acc, getReader) => acc || getReader(),
-      undefined as Reader<boolean> | undefined
-    )
+    ref: Reader<boolean>
   ) {
-    if (!ref) {
-      throw new InternalError('Cannot create empty NestedReader');
-    }
     super(ref.typeName, ref.currentOffset, ref.currentIndex, ref.currentLength);
     this.currentType = ref.currentType;
     this.readers = readers;
@@ -566,6 +569,7 @@ class NestedReader extends Reader<Multiple> {
     LazyArray.nestedForEach(this.readers, reader => {
       if (reader.isBranched()) reader.switchBranch(branchIndex);
     });
+    (this.ref as BranchedReader).switchBranch(branchIndex);
     this.typeName = this.ref.typeName;
     this.currentType = this.ref.currentType;
     this.currentOffset = this.ref.currentOffset;

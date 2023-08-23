@@ -191,8 +191,6 @@ export function encodeWithSchema(data: any, schema: Schema, rootType: string) {
     }
 
     allocate(offset: number) {
-      if (this.isNull()) return offset;
-
       const { currentType, currentSource, branches } = this;
 
       if (this.isPrimitive()) {
@@ -201,6 +199,8 @@ export function encodeWithSchema(data: any, schema: Schema, rootType: string) {
       }
 
       this.currentOffset = offset;
+
+      if (this.isNull()) return offset;
 
       if (
         this.isPrimitive() ||
@@ -350,7 +350,9 @@ export function encodeWithSchema(data: any, schema: Schema, rootType: string) {
       const _nextBranches: Writer[][] = [];
       for (const writer of this.writers) {
         const children = writer.spawn();
-        if (children.length === 0) continue;
+        if (children.length === 0) {
+          continue;
+        }
         for (let i = 0; i < children.length; i++) {
           _nextBranches[i] = _nextBranches[i] || [];
           _nextBranches[i].push(children[i]);

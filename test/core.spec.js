@@ -1,5 +1,6 @@
 import { encodeWithSchema } from '../dist/core/writer.js';
 import { createReader, ALL_VALUES } from '../dist/core/reader.js';
+import { LazyArray } from '../dist/core/LazyArray.js';
 
 import trackedEntities from './dummyData.json' assert { type: 'json' };
 import { SCHEMA } from './schema.js';
@@ -16,16 +17,24 @@ const encoded = encodeWithSchema(DUMMY_DATA, SCHEMA, '#');
 
 const Reader = createReader(encoded.buffer, SCHEMA);
 
-const reader = new Reader('#', 0)
-  .get('trackedEntities')
-  .get([0, 1, 2, 3])
-  .get('waypoints')
-  .get(ALL_VALUES)
-  .get('pose')
-  .get('position');
+const trackedEntitiesReader = new Reader('#', 0).get('trackedEntities');
 
-const decoded = reader.value()?.map(v => v?.copyTo(Array)).copyTo(Array);
-const dumped = reader.dump().slice();
+const waypointsReader = trackedEntitiesReader.get(ALL_VALUES).get('waypoints');
 
-console.log(decoded);
-console.log(new Float32Array(dumped.buffer))
+const waypointsPoseReader = waypointsReader.get(ALL_VALUES).get('pose').get('position');
+
+const trackedEntitiesSourceIdReader = trackedEntitiesReader.get(ALL_VALUES).get('source').get(1);
+
+const decoded = waypointsPoseReader.value();
+const dumped = waypointsPoseReader.dump(Float32Array);
+
+const collapsed = LazyArray.nestedFilter(decoded, v => v != null);
+
+// console.log(decoded);
+// console.log(dumped);
+// console.log(LazyArray.getFlattenedIndexes(collapsed)[0]);
+// console.log(LazyArray.getNestedSize(collapsed));
+// console.log(LazyArray.getNestedDepth(collapsed));
+// console.log([...LazyArray.iterateNested(collapsed)]);
+
+console.log(trackedEntitiesSourceIdReader.value());

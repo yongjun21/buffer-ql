@@ -2,7 +2,7 @@ const path = require('path');
 const fs = require('fs');
 
 const trackedEntities = generateTrackedEntitiesArray(10);
-
+trackedEntities[1].waypoints = [];
 const dummyData = trackedEntities;
 
 fs.writeFileSync(

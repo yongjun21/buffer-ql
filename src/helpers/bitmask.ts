@@ -390,6 +390,7 @@ export function forwardMapSingleOneOf(
   index: number,
   ...decodedBitmasks: Iterable<number>[]
 ) {
+  if (index < 0) return [0, -1];
   const kMax = decodedBitmasks.length;
   for (let k = 0; k < kMax; k++) {
     const mapped = forwardMapSingleIndex(decodedBitmasks[k], index, 0);

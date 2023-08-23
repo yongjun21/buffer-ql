@@ -5,6 +5,8 @@ import { UsageError } from '../helpers/error.js';
 
 import type { ArrayLike, ArrayConstructor, Getter } from '../types/common.js';
 
+const CUSTOM_INSPECT_SYMBOL = Symbol.for('nodejs.util.inspect.custom');
+
 let defaultMapping = new Int32Array(0);
 
 export function getDefaultIndexMap(n: number) {
@@ -305,17 +307,20 @@ export class LazyArray<T = any> {
     return new LazyArray(this._get, indexMap);
   }
 
-  dropNull() {
-    const indexMap = this.indexMap.filter(i => i >= 0);
-    return new LazyArray(this._get, indexMap);
-  }
-
   get proxy() {
     return this._proxy;
   }
 
   get length() {
     return this.indexMap.length;
+  }
+
+  toString() {
+    return this.copyTo(Array).toString();
+  }
+
+  [CUSTOM_INSPECT_SYMBOL]() {
+    return this.copyTo(Array);
   }
 
   static dropNull(...arrays: LazyArray[]) {
@@ -358,7 +363,22 @@ export class LazyArray<T = any> {
 
   static nestedReduce<T, U>(
     arr: LazyArray<T | LazyArray<T>>,
-    fn: (acc: U, v: () => U | T, i: number) => U,
+    fn: (acc: U, v: T, i: number) => U,
+    fn2: (acc: U, v: U, i: number) => U,
+    init: U
+  ): U {
+    return arr.reduce(
+      (acc, v, i) =>
+        v instanceof LazyArray
+          ? fn2(acc, this.nestedReduce(v, fn, fn2, init), i)
+          : fn(acc, v, i),
+      init
+    );
+  }
+
+  static nestedLazyReduce<T, U>(
+    arr: LazyArray<T | LazyArray<T>>,
+    fn: (acc: U, v: () => T | U, i: number) => U,
     init: U
   ): U {
     return arr.lazyReduce((acc, getNested, i) => {
@@ -367,7 +387,7 @@ export class LazyArray<T = any> {
         () => {
           const nested = getNested();
           return nested instanceof LazyArray
-            ? this.nestedReduce(nested, fn, init)
+            ? this.nestedLazyReduce(nested, fn, init)
             : nested;
         },
         i
@@ -375,14 +395,17 @@ export class LazyArray<T = any> {
     }, init);
   }
 
-  static nestedDropNull<T>(
-    arr: LazyArray<T | LazyArray<T>>
+  static nestedFilter<T>(
+    arr: LazyArray<T | LazyArray<T>>,
+    fn: (v: T, i: number) => boolean
   ): LazyArray<T | LazyArray<T>> {
-    return arr.dropNull().map(nested => {
-      return nested instanceof LazyArray
-        ? (this.nestedDropNull(nested) as LazyArray<T>)
-        : nested;
-    });
+    return arr
+      .filter((nested, i) => nested instanceof LazyArray || fn(nested, i))
+      .map(nested => {
+        return nested instanceof LazyArray
+          ? (this.nestedFilter(nested, fn) as LazyArray<T>)
+          : nested;
+      });
   }
 
   static iterateNested<T>(arr: LazyArray<T | LazyArray<T>>) {
@@ -400,56 +423,51 @@ export class LazyArray<T = any> {
   }
 
   static getNestedSize<T>(arr: LazyArray<T | LazyArray<T>>) {
-    return this.nestedReduce(arr, acc => acc + 1, 0);
+    return this.nestedReduce(
+      arr,
+      acc => acc + 1,
+      (acc, u) => acc + u,
+      0
+    );
   }
 
   static getNestedDepth<T>(arr: LazyArray<T | LazyArray<T>>) {
-    class Acc {
-      depth = 0;
-    }
     return this.nestedReduce(
       arr,
-      (acc, getNested) => {
-        const nested = getNested();
-        if (nested instanceof Acc) {
-          acc.depth = Math.max(acc.depth, nested.depth + 1);
-        }
-        return acc;
-      },
-      new Acc()
-    ).depth;
+      acc => acc,
+      (acc, u) => Math.max(acc, u + 1),
+      0
+    );
   }
 
   static getFlattenedIndexes<T>(arr: LazyArray<T | LazyArray<T>>): number[][] {
-    class Acc {
-      count = 0;
-      height = 0;
-      indexes: number[][] = [];
-    }
+    const init = { count: 0, height: 0, indexes: [] as number[][] };
     return this.nestedReduce(
       arr,
-      (acc, getNested, i) => {
-        const nested = getNested();
-        if (nested instanceof Acc) {
-          if (i === 0) {
-            acc.height = nested.height + 1;
-            acc.indexes = [[], ...nested.indexes];
-          } else if (acc.height !== nested.height + 1) {
-            throw new UsageError('Nested array height is not consistent');
-          }
-          acc.indexes[0].push(acc.count);
-          for (let k = 1; k < acc.height; k++) {
-            for (const i of nested.indexes[k - 1]) {
-              acc.indexes[k].push(i + acc.count);
-            }
-          }
-          acc.count += nested.count;
-        } else {
-          acc.count++;
+      ({ count, height, indexes }) => {
+        if (height > 0) {
+          throw new UsageError('Nested array height is not consistent');
         }
-        return acc;
+        return { count: count + 1, height, indexes };
       },
-      new Acc()
+      (acc, u) => {
+        let { count, height, indexes } = acc;
+        if (acc === init) {
+          height = u.height + 1;
+          indexes = [[], ...u.indexes];
+        } else if (height !== u.height + 1) {
+          throw new UsageError('Nested array height is not consistent');
+        }
+        indexes[0].push(count);
+        for (let k = 1; k < height; k++) {
+          for (const i of u.indexes[k - 1]) {
+            indexes[k].push(i + count);
+          }
+        }
+        count += u.count;
+        return { count, height, indexes };
+      },
+      init
     ).indexes.reverse();
   }
 
@@ -499,7 +517,9 @@ class WithLazyArray<T> {
     index: number | Int32Array
   ) {
     if (target instanceof LazyArray) {
-      return typeof index === 'number' ? target._get(index) : new LazyArray(target._get, index);
+      return typeof index === 'number'
+        ? target._get(index)
+        : new LazyArray(target._get, index);
     }
 
     if (
