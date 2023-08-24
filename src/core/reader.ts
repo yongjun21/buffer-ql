@@ -1,4 +1,5 @@
-import { LazyArray, getDefaultIndexMap, NestedLazyArray } from './LazyArray.js';
+import { ReaderApply, NestedReaderSplitApply } from './ReaderApply.js';
+import { LazyArray, getDefaultIndexMap } from './LazyArray.js';
 
 import {
   decodeBitmask,
@@ -21,12 +22,12 @@ import type {
 
 import type { TypedArrayConstructor } from '../types/common.js';
 
-type Single = true;
-type Multiple = false;
+export type Single = true;
+export type Multiple = false;
 type IndexType<T extends boolean> = T extends Single ? number : Int32Array;
 type ValueReturnType<U, T extends boolean> = T extends Single
   ? U
-  : NestedLazyArray<U>;
+  : LazyArray<U>;
 
 export const ALL_KEYS = Symbol('ALL_KEYS');
 export const ALL_VALUES = Symbol('ALL_VALUES');
@@ -40,6 +41,7 @@ type ValueCallStack<Reader> = [
   string | number
 ][];
 
+const EMPTY_UINT8 = new Uint8Array(0);
 const EMPTY_INT32 = new Int32Array(0);
 export class Reader<T extends boolean = Single> {
   static dataView: DataView = new DataView(new Uint8Array(0).buffer);
@@ -322,7 +324,9 @@ export class Reader<T extends boolean = Single> {
         children: [nextType]
       } = currentType as SchemaCompoundType<'Optional'>;
 
-      if (this.isUndefined()) return this._nextReader(nextType, -1, -1, 0);
+      if (this.isUndefined()) {
+        return this._nextReader(nextType, -1, currentIndex, currentLength);
+      }
 
       const bitmaskOffset = _dataView.getInt32(currentOffset, true);
       const bitmaskLength = _dataView.getInt32(currentOffset + 4, true);
@@ -336,7 +340,7 @@ export class Reader<T extends boolean = Single> {
         : chainForwardIndexes(
             currentIndex as Int32Array,
             forwardMapIndexes(
-              getMaxIndex(currentIndex as Int32Array) + 1,
+              getMaxIndex(currentIndex as Int32Array, currentLength) + 1,
               bitmask
             ).asInt32Array()
           );
@@ -520,6 +524,17 @@ export class Reader<T extends boolean = Single> {
     }
   }
 
+  apply() {
+    if (this.singleValue()) {
+      throw new UsageError('Calling apply on a single value reader');
+    }
+    return new ReaderApply(this);
+  }
+
+  splitApply(): NestedReaderSplitApply {
+    throw new UsageError('Calling splitApply on a non-nested reader');
+  }
+
   dump(TypedArray: TypedArrayConstructor = Uint8Array) {
     if (!this.isPrimitive()) {
       throw new UsageError('Calling dump on a non-primitive type');
@@ -539,7 +554,7 @@ export class Reader<T extends boolean = Single> {
     const { size } = currentType as SchemaPrimitiveType;
 
     if (this.singleValue()) {
-      const index = this.currentIndex as number;
+      const index = currentIndex as number;
       return index < 0 || index >= currentLength
         ? [-1, 0]
         : [currentOffset + index * size, size];
@@ -561,22 +576,6 @@ export class Reader<T extends boolean = Single> {
     return [offset, length];
   }
 
-  split() {
-    if (typeof this.currentIndex === 'number') {
-      throw new UsageError(
-        `Calling split on ${
-          this.isUndefined() ? 'undefined' : 'a single value'
-        }`
-      );
-    }
-    const { typeName, currentOffset, currentIndex, currentLength } = this;
-    return new SplittedReader(
-      this._nextReader(typeName, -1, -1, 0),
-      i => this._nextReader(typeName, currentOffset, i, currentLength),
-      currentIndex as Int32Array
-    );
-  }
-
   protected _nextReader(
     ...args: ConstructorParameters<typeof Reader<boolean>>
   ) {
@@ -596,7 +595,7 @@ export class Reader<T extends boolean = Single> {
   }
 }
 
-class NestedReader extends Reader<Multiple> {
+export class NestedReader extends Reader<Multiple> {
   readers: LazyArray<Reader<boolean>>;
   ref: Reader<boolean>;
 
@@ -611,6 +610,11 @@ class NestedReader extends Reader<Multiple> {
 
   singleValue() {
     return false;
+  }
+
+  isUndefined(atIndex?: number | Int32Array) {
+    if (typeof atIndex !== 'number') return false;
+    return this.readers.get(atIndex).isUndefined();
   }
 
   isBranched() {
@@ -638,9 +642,8 @@ class NestedReader extends Reader<Multiple> {
     return new NestedReader(nextReaders, nextRef);
   }
 
-  split() {
-    const { _get, indexMap } = this.readers;
-    return new SplittedReader(this.ref, _get, indexMap);
+  splitApply() {
+    return new NestedReaderSplitApply(this);
   }
 
   _computeDump() {
@@ -663,7 +666,7 @@ class NestedReader extends Reader<Multiple> {
   }
 }
 
-class BranchedReader<T extends boolean> extends Reader<T> {
+export class BranchedReader<T extends boolean> extends Reader<T> {
   branches: Reader<T>[];
   currentBranch: number;
   discriminator: T extends Single ? number : Uint8Array;
@@ -686,9 +689,9 @@ class BranchedReader<T extends boolean> extends Reader<T> {
 
     if (root.isUndefined()) {
       const branches = children.map(nextType =>
-        _root._nextReader(nextType, -1, -1, 0)
+        _root._nextReader(nextType, -1, currentIndex, currentLength)
       );
-      return new BranchedReader(branches, 0, 0, -1);
+      return new BranchedReader(branches, 0, EMPTY_UINT8, currentIndex);
     }
 
     const bitmasks: Iterable<number>[] = [];
@@ -725,7 +728,7 @@ class BranchedReader<T extends boolean> extends Reader<T> {
       return new BranchedReader(branches, 0, discriminator, _currentIndex);
     } else {
       const _currentIndex = currentIndex as Int32Array;
-      const maxIndex = getMaxIndex(_currentIndex);
+      const maxIndex = getMaxIndex(_currentIndex, currentLength);
 
       const discriminator = indexToOneOf(
         maxIndex + 1,
@@ -769,6 +772,11 @@ class BranchedReader<T extends boolean> extends Reader<T> {
     this.rootIndex = rootIndex;
   }
 
+  singleValue() {
+    if (typeof this.rootIndex !== 'number') return false;
+    return this.branches[this.discriminator as number].singleValue();
+  }
+
   isUndefined(atIndex: number | Int32Array = this.rootIndex) {
     return super.isUndefined(atIndex);
   }
@@ -803,91 +811,20 @@ class BranchedReader<T extends boolean> extends Reader<T> {
 
   get(key: Key): Reader<boolean> {
     const next = super.get(key) as Reader<T>;
-    const nextBranches = [...this.branches];
-    nextBranches[this.currentBranch] = next;
+    const { branches, currentBranch, discriminator, rootIndex } = this;
+    const nextBranches = [...branches];
+    nextBranches[currentBranch] = next;
     return new BranchedReader(
       nextBranches,
-      this.currentBranch,
-      this.discriminator,
-      this.rootIndex
+      currentBranch,
+      discriminator,
+      rootIndex
     );
-  }
-
-  split() {
-    throw new UsageError('Calling split on a branched reader');
-    return super.split(); // eslint-disable-line
   }
 
   get _dataView() {
     const branch = this.branches[this.currentBranch];
     return (branch.constructor as typeof Reader).dataView;
-  }
-}
-
-class SplittedReader extends LazyArray<Reader<boolean>> {
-  ref: Reader<boolean>;
-
-  constructor(
-    ref: Reader<boolean>,
-    getter: (i: number) => Reader<boolean>,
-    indexMap: Int32Array
-  ) {
-    super(getter, indexMap);
-    // @ts-ignore
-    ref._isNestedRef = true;
-    this.ref = ref;
-  }
-
-  // @ts-ignore
-  map(fn: (v: Reader<boolean>, i: number) => Reader<boolean>) {
-    const { _get, indexMap } = this;
-    const mappedRef = fn(this.ref, -1);
-    if (!(mappedRef instanceof Reader)) {
-      throw new UsageError(
-        'map method of SplittedReader is restricted to transforming from Reader to Reader'
-      );
-    }
-    return new SplittedReader(
-      mappedRef,
-      i => fn(_get(indexMap[i]), i),
-      getDefaultIndexMap(indexMap.length)
-    );
-  }
-
-  // @ts-ignore
-  reverse() {
-    const reversed = super.reverse();
-    return new SplittedReader(this.ref, reversed._get, reversed.indexMap);
-  }
-
-  // @ts-ignore
-  slice(start: number, end: number) {
-    const sliced = super.slice(start, end);
-    return new SplittedReader(this.ref, sliced._get, sliced.indexMap);
-  }
-
-  // @ts-ignore
-  filter(fn: (reader: Reader<boolean>, i: number) => boolean) {
-    const filtered = super.filter(fn);
-    return new SplittedReader(this.ref, filtered._get, filtered.indexMap);
-  }
-
-  // @ts-ignore
-  sort(fn: (a: Reader<boolean>, b: Reader<boolean>) => number) {
-    const sorted = super.sort(fn);
-    return new SplittedReader(this.ref, sorted._get, sorted.indexMap);
-  }
-
-  // @ts-ignore
-  findAll<U = any>(target: LazyArray<U>, matchFn: (a: U, b: Reader<boolean>, i: number) => boolean) {
-    const matched = super.findAll(target, matchFn);
-    return new SplittedReader(this.ref, matched._get, matched.indexMap);
-  }
-
-  combine() {
-    const { _get, indexMap } = this;
-    const readers = new LazyArray(_get, indexMap);
-    return new NestedReader(readers, this.ref);
   }
 }
 
@@ -930,12 +867,12 @@ function createRefCache() {
   };
 }
 
-function getMaxIndex(indexes: Int32Array) {
+function getMaxIndex(indexes: Int32Array, length: number) {
   let max = -1;
   for (const i of indexes) {
     if (i > max) max = i;
   }
-  return max;
+  return Math.min(max, length - 1);
 }
 
 function chainForwardIndexes(a: Int32Array, b: Int32Array) {

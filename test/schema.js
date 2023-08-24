@@ -29,10 +29,11 @@ export const SCHEMA = extendSchema(
       probability: 'Optional<Float32>',
     },
     Pose: {
-      position: 'Vector3',
+      position: 'XYZ',
       rotation: 'Vector3',
       size: 'Vector3'
     },
+    XYZ: ['Float32', 'Float32', 'Float32'],
     TrackedEntitySource: ['SourceTypeEnum', 'OneOf<String,Int32>', 'Optional<String>'],
     TrackedEntityRef: 'Ref<TrackedEntity>',
   }

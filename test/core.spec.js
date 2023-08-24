@@ -19,23 +19,19 @@ const Reader = createReader(encoded.buffer, SCHEMA);
 
 const trackedEntitiesReader = new Reader('#', 0).get('trackedEntities');
 
-const waypointsReader = trackedEntitiesReader.get(ALL_VALUES).get('waypoints');
+// const waypointsReader = trackedEntitiesReader.get(ALL_VALUES).get('waypoints');
 
-const waypointsPoseReader = waypointsReader
-  .get(ALL_VALUES)
-  .get('pose')
-  .get('position');
-
-// const trackedEntitiesSourceIdReader = trackedEntitiesReader.get(ALL_VALUES).get('source').get(1);
+// const waypointsPoseReader = waypointsReader
+//   .get(ALL_VALUES)
+//   .get('pose')
+//   .get('rotation');
 
 // const decoded = waypointsPoseReader.value();
 // const dumped = waypointsPoseReader.dump(Float32Array);
-
 // console.log(decoded);
 // console.log(dumped);
 
 // const collapsed = LazyArray.iterateNested(decoded, v => v != null);
-
 // console.log([...collapsed.values]);
 // console.log([...collapsed.startIndices]);
 
@@ -44,18 +40,22 @@ const waypointsPoseReader = waypointsReader
 
 const filtered = trackedEntitiesReader
   .get(ALL_VALUES)
-  .split()
-  .filter(reader => reader.get('class').value() === 3)
-  .map(reader => reader.get('waypoints').get(ALL_VALUES))
-  .filter(reader => !reader.isUndefined())
-  .map(reader => {
-    return reader
-      .split()
-      .filter(reader => !reader.get('probability').isUndefined())
-      .combine()
-  })
-  .combine();
+  .apply()
+  .filter(v => v === 3)
+  .on(reader => reader.get('class'))
+  .get('waypoints')
+  .apply()
+  .dropNull()
+  .on()
+  .get(ALL_VALUES)
+  .splitApply()
+  .dropNull()
+  .on(reader => reader.get('probability'))
+  .splitApply()
+  .filter(v => v > 0.7)
+  .on(reader => reader.get('probability'))
 
 console.log(filtered.value());
 
+// const trackedEntitiesSourceIdReader = trackedEntitiesReader.get(ALL_VALUES).get('source').get(1);
 // console.log(trackedEntitiesSourceIdReader.value());
