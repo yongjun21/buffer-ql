@@ -15,7 +15,7 @@ function generateTrackedEntitiesArray(count) {
   for (let i = 0; i < count; i++) {
     entities.push({
       id: i + 1,
-      class: i % 2 === 0 ? 1 : 2,
+      class: i % 3 + 1,
       pose: generatePose(),
       velocity: i % 3 === 0 ? generateVector3() : undefined,
       source: generateTrackedEntitySource(),

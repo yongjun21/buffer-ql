@@ -21,21 +21,41 @@ const trackedEntitiesReader = new Reader('#', 0).get('trackedEntities');
 
 const waypointsReader = trackedEntitiesReader.get(ALL_VALUES).get('waypoints');
 
-const waypointsPoseReader = waypointsReader.get(ALL_VALUES).get('pose').get('position');
+const waypointsPoseReader = waypointsReader
+  .get(ALL_VALUES)
+  .get('pose')
+  .get('position');
 
-const trackedEntitiesSourceIdReader = trackedEntitiesReader.get(ALL_VALUES).get('source').get(1);
+// const trackedEntitiesSourceIdReader = trackedEntitiesReader.get(ALL_VALUES).get('source').get(1);
 
-const decoded = waypointsPoseReader.value(true);
-const dumped = waypointsPoseReader.dump(Float32Array);
+// const decoded = waypointsPoseReader.value();
+// const dumped = waypointsPoseReader.dump(Float32Array);
 
-const collapsed = LazyArray.iterateNested(decoded, v => v != null);
+// console.log(decoded);
+// console.log(dumped);
 
-console.log(decoded);
-console.log([...collapsed]);
-console.log([...collapsed.indexes])
+// const collapsed = LazyArray.iterateNested(decoded, v => v != null);
 
-console.log(dumped);
-console.log(LazyArray.getNestedSize(decoded, v => v != null));
-console.log(LazyArray.getNestedDepth(decoded));
+// console.log([...collapsed.values]);
+// console.log([...collapsed.startIndices]);
 
-console.log(trackedEntitiesSourceIdReader.value());
+// console.log(LazyArray.getNestedSize(decoded, v => v != null));
+// console.log(LazyArray.getNestedDepth(decoded));
+
+const filtered = trackedEntitiesReader
+  .get(ALL_VALUES)
+  .split()
+  .filter(reader => reader.get('class').value() === 3)
+  .map(reader => reader.get('waypoints').get(ALL_VALUES))
+  .filter(reader => !reader.isUndefined())
+  .map(reader => {
+    return reader
+      .split()
+      .filter(reader => !reader.get('probability').isUndefined())
+      .combine()
+  })
+  .combine();
+
+console.log(filtered.value());
+
+// console.log(trackedEntitiesSourceIdReader.value());

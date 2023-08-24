@@ -1,7 +1,4 @@
-import { Reader } from './reader.js';
 import { isArray } from '../helpers/common.js';
-
-import { UsageError } from '../helpers/error.js';
 
 import type { ArrayLike, ArrayConstructor, Getter } from '../types/common.js';
 
@@ -138,7 +135,7 @@ export class LazyArray<T = any> {
   }
 
   forEach(fn: (v: T, i: number) => void) {
-    return this._iter.forEach(i => fn(this.get(i), i));
+    this._iter.forEach(i => fn(this.get(i), i));
   }
 
   map<U>(fn: (v: T, i: number) => U) {
@@ -432,19 +429,41 @@ export class LazyArray<T = any> {
     }
 
     return {
-      *[Symbol.iterator]() {
-        for (const [v] of _iterate(arr, yieldFromLevel, { index: 0 })) yield v;
+      [Symbol.iterator]() {
+        return _iterate(arr, yieldFromLevel, { index: 0 });
       },
-      get indexes () {
+      get values() {
+        const iter = this;
+        return {
+          *[Symbol.iterator]() {
+            for (const [v] of iter) {
+              yield v;
+            }
+          }
+        };
+      },
+      get startIndices() {
+        const iter = this;
         return {
           *[Symbol.iterator]() {
             let index = 0;
-            for (const [_, i] of _iterate(arr, yieldFromLevel, { index: 0 })) {
+            for (const [_, i] of iter) {
               if (i === 0) yield index;
               index++;
             }
           }
+        };
+      },
+      eagerEvaluate() {
+        const values = [];
+        const startIndices = [];
+        let index = 0;
+        for (const [v, i] of this) {
+          if (i === 0) startIndices.push(index);
+          values.push(v);
+          index++;
         }
+        return { values, startIndices };
       }
     };
   }
@@ -482,13 +501,13 @@ class WithLazyArray<T> {
     this.withArr = withArr;
   }
 
-  index<U = any>(target: LazyArray<U> | Reader<boolean>) {
+  index<U = any>(target: LazyArray<U>) {
     const index = this.withArr.indexMap;
     return this._apply(target, index);
   }
 
   find<U = any>(
-    target: LazyArray<U> | Reader<boolean>,
+    target: LazyArray<U>,
     fn: (v: T, i: number) => boolean
   ) {
     const index = this.withArr.findIndex(fn);
@@ -496,7 +515,7 @@ class WithLazyArray<T> {
   }
 
   filter<U = any>(
-    target: LazyArray<U> | Reader<boolean>,
+    target: LazyArray<U>,
     fn: (v: T, i: number) => boolean
   ) {
     const { indexMap } = this.withArr.filter(fn);
@@ -504,7 +523,7 @@ class WithLazyArray<T> {
   }
 
   sort<U = any>(
-    target: LazyArray<U> | Reader<boolean>,
+    target: LazyArray<U>,
     compare: (a: T, b: T) => number
   ) {
     const { indexMap } = this.withArr.sort(compare);
@@ -512,24 +531,12 @@ class WithLazyArray<T> {
   }
 
   private _apply<U = any>(
-    target: LazyArray<U> | Reader<boolean>,
+    target: LazyArray<U>,
     index: number | Int32Array
   ) {
-    if (target instanceof LazyArray) {
-      return typeof index === 'number'
-        ? target._get(index)
-        : new LazyArray(target._get, index);
-    }
-
-    if (
-      target instanceof Reader &&
-      target.singleValue() &&
-      (target.isArray() || target.isMap())
-    ) {
-      return target.get(index as unknown as number[]);
-    }
-
-    throw new UsageError('Invalid target');
+    return typeof index === 'number'
+      ? target._get(index)
+      : new LazyArray(target._get, index);
   }
 }
 
