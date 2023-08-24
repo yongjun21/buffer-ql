@@ -1,5 +1,5 @@
 export { createReader, linkReaders, ALL_KEYS, ALL_VALUES } from './core/reader';
-export type { Reader } from './core/reader';
+export type { Reader } from './core/Readers';
 
 export { encodeWithSchema } from './core/writer';
 

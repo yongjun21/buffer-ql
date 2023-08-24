@@ -1,7 +1,7 @@
-import { NestedReader } from './reader.js';
+import { NestedReader } from './Readers.js';
 import { LazyArray } from './LazyArray.js';
 
-import type { Reader, Multiple } from './reader';
+import type { Reader, Multiple } from './Readers.js';
 
 type ReaderApplyWhere = (reader: Reader<Multiple>) => Reader<Multiple>;
 
