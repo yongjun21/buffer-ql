@@ -652,8 +652,8 @@ export class NestedReader extends Reader<Multiple> {
     return [offset, length];
   }
 
-  get _dataView() {
-    return (this.ref.constructor as typeof Reader).dataView;
+  get _dataView(): DataView {
+    return (this.ref as NestedReader)._dataView;
   }
 }
 

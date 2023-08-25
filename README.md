@@ -419,3 +419,63 @@ export const SCHEMA = extendSchema(
 );
 ```
 
+## More on data reader
+
+### Re-indexing reader using data
+
+- one common use case is to filter data rows based on certain attributes. One might
+
+```js
+const filteredTrackedEntities = trackedEntitiesReader
+  .get(ALL_VALUES)
+  .value()
+  .filter(d => d.class === 3);
+```
+
+- this is less than ideal since we are calling `.value()` upfront hence unpacking the entire data object even though we only need to read from the `class` attribute. We provide an API to do this in a more performant way.
+
+```js
+const filteredTrackedEntities = trackedEntitiesReader
+  .get(ALL_VALUES)
+  .apply.filter(v => v === 3)
+  .on(reader => reader.get('class'))
+  .value();
+```
+
+- this is more efficient since we defer calling `.value()` until filtering is done
+- List of re-indexing functions supported with this API
+  - `.apply.filter().on()`
+  - `.apply.sort().on()`
+  - `.apply.findAll().on()`
+  - `.apply.dropNull().on()`
+  - `.apply.reverse()`
+  - `.apply.slice()`
+- in cases where filtering is needed on a nested array, `.apply` should be followed by one or more `.forEach`
+
+```js
+const filteredWaypoints = trackedEntitiesReader
+  .get(ALL_VALUES)
+  .get('waypoints')
+  .apply.dropNull()
+  .on()
+  .get(ALL_VALUES)
+  .apply.forEach.dropNull()
+  .on(reader => reader.get('probability'))
+  .apply.forEach.filter(v => v > 0.5)
+  .on(reader => reader.get('probability'))
+```
+
+### Extracting directly from contiguous blocks of data
+
+```js
+const waypointsReader = trackedEntitiesReader
+  .get(ALL_VALUES)
+  .get('waypoints')
+  .apply.dropNull()
+  .on()
+  .get(ALL_VALUES)
+  .get('pose')
+  .get('position');
+
+const dumped = waypointsReader.dump(Float32);
+```

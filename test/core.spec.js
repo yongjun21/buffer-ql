@@ -22,7 +22,7 @@ const waypointsReader = trackedEntitiesReader.get(ALL_VALUES).get('waypoints');
 const waypointsPoseReader = waypointsReader
   .get(ALL_VALUES)
   .get('pose')
-  .get('rotation');
+  .get('position');
 
 const decoded = waypointsPoseReader.value();
 const dumped = waypointsPoseReader.dump(Float32Array);
@@ -49,9 +49,7 @@ const filtered = trackedEntitiesReader
   .apply.forEach.filter(v => v > 0.7)
   .on(reader => reader.get('probability'))
   .get('pose')
-  .get('position')
-  .get(ALL_VALUES)
-  .apply.forEach.forEach.filter(v => v > 0.5).on();
+  .get('position');
 
 console.log(filtered.value());
 
