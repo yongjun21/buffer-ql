@@ -1,4 +1,4 @@
-import { extendSchema } from '../dist/schema/index.js';
+import { extendSchema } from '../dist/index.js';
 
 export const SCHEMA = extendSchema(
   {
@@ -33,7 +33,7 @@ export const SCHEMA = extendSchema(
       rotation: 'Vector3',
       size: 'Vector3'
     },
-    XYZ: ['Float32', 'Float32', 'Float32'],
+    XYZ: 'Array<Float32>',
     TrackedEntitySource: ['SourceTypeEnum', 'OneOf<String,Int32>', 'Optional<String>'],
     TrackedEntityRef: 'Ref<TrackedEntity>',
   }

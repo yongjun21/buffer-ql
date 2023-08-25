@@ -409,7 +409,6 @@ export class Reader<T extends boolean = Single> {
   }
 
   private _validateArrayKey(i: Key): IndexType<boolean> | undefined {
-    if (i instanceof Int32Array) return i;
     if (typeof i === 'number') return i;
     if (Array.isArray(i)) {
       for (const v of i) {
@@ -470,7 +469,6 @@ export class Reader<T extends boolean = Single> {
     boolean,
     (getIndex: (k: string) => number) => IndexType<boolean> | undefined
   ] {
-    if (k instanceof Int32Array) return [false, () => k];
     if (typeof k === 'string') return [true, getIndex => getIndex(k)];
     if (Array.isArray(k)) {
       for (const v of k) {

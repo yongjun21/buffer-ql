@@ -304,6 +304,11 @@ export class LazyArray<T = any> {
     return new LazyArray(this._get, indexMap);
   }
 
+  dropNull() {
+    const indexMap = this.indexMap.filter(i => i >= 0);
+    return new LazyArray(this._get, indexMap);
+  }
+
   get proxy() {
     return this._proxy;
   }

@@ -1,4 +1,4 @@
-import { LazyArray, tuple } from '../dist/core/LazyArray.js';
+import { LazyArray, tuple } from '../dist/index.js';
 
 testQuicksort();
 testQuicksortIsStable();

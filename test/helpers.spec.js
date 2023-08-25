@@ -13,7 +13,7 @@ import {
   backwardMapOneOf,
   forwardMapSingleOneOf,
   backwardMapSingleOneOf
-} from '../dist/helpers/bitmask.js';
+} from '../dist/index.js';
 
 testBitmask();
 

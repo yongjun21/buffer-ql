@@ -1,12 +1,12 @@
-export { createReader, linkReaders, ALL_KEYS, ALL_VALUES } from './core/reader';
-export type { Reader } from './core/Readers';
+export { createReader, linkReaders, ALL_KEYS, ALL_VALUES } from './core/reader.js';
+export type { Reader } from './core/Readers.js';
 
-export { encodeWithSchema } from './core/writer';
+export { encodeWithSchema } from './core/writer.js';
 
-export { LazyArray, getDefaultIndexMap, tuple } from './core/LazyArray';
-export type { NestedLazyArray } from './core/LazyArray';
+export { LazyArray, getDefaultIndexMap, tuple } from './core/LazyArray.js';
+export type { NestedLazyArray } from './core/LazyArray.js';
 
-export { extendSchema } from './schema/index';
+export { extendSchema } from './schema/index.js';
 
 export {
   encodeBitmask,
@@ -25,4 +25,4 @@ export {
   backwardMapOneOf,
   forwardMapSingleOneOf,
   backwardMapSingleOneOf
-} from './helpers/bitmask';
+} from './helpers/bitmask.js';

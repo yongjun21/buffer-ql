@@ -1,4 +1,4 @@
-import { NestedReader } from './Readers.js';
+import { NestedReader, BranchedReader } from './Readers.js';
 import { LazyArray } from './LazyArray.js';
 
 import { UsageError } from '../helpers/error.js';
@@ -26,13 +26,28 @@ export class ReaderApply<T extends Reader<Multiple> = Reader<Multiple>> {
       const nextReaders = this.target.readers.reverse();
       return new NestedReader(nextReaders, this.target.ref);
     }
-    const { typeName, currentOffset, currentIndex, currentLength } =
-      this.target;
+    const currentIndex = (
+      this.target instanceof BranchedReader
+        ? this.target.rootIndex
+        : this.target.currentIndex
+    ) as Int32Array;
     const n = currentIndex.length;
     const nextIndex = new Int32Array(n);
     currentIndex.forEach((v, i) => {
       nextIndex[n - 1 - i] = v;
     });
+
+    if (this.target instanceof BranchedReader) {
+      const { branches, currentBranch, discriminator } = this.target;
+      return new BranchedReader(
+        branches,
+        currentBranch,
+        discriminator,
+        nextIndex
+      );
+    }
+
+    const { typeName, currentOffset, currentLength } = this.target;
     // @ts-ignore
     return this.target._nextReader(
       typeName,
@@ -47,9 +62,25 @@ export class ReaderApply<T extends Reader<Multiple> = Reader<Multiple>> {
       const nextReaders = this.target.readers.slice(start, end);
       return new NestedReader(nextReaders, this.target.ref);
     }
-    const { typeName, currentOffset, currentIndex, currentLength } =
-      this.target;
+
+    const currentIndex = (
+      this.target instanceof BranchedReader
+        ? this.target.rootIndex
+        : this.target.currentIndex
+    ) as Int32Array;
     const nextIndex = currentIndex.slice(start, end);
+
+    if (this.target instanceof BranchedReader) {
+      const { branches, currentBranch, discriminator } = this.target;
+      return new BranchedReader(
+        branches,
+        currentBranch,
+        discriminator,
+        nextIndex
+      );
+    }
+
+    const { typeName, currentOffset, currentLength } = this.target;
     // @ts-ignore
     return this.target._nextReader(
       typeName,
@@ -65,26 +96,7 @@ export class ReaderApply<T extends Reader<Multiple> = Reader<Multiple>> {
         const value = where(this.target).value<V>();
         if (value == null) return this.target;
         const filtered = value.filter(fn);
-
-        if (this.target instanceof NestedReader) {
-          const { _get, indexMap } = this.target.readers;
-          const nextIndexMap = filtered.indexMap.map(i => indexMap[i]);
-          return new NestedReader(
-            new LazyArray(_get, nextIndexMap),
-            this.target.ref
-          );
-        }
-
-        const { typeName, currentOffset, currentIndex, currentLength } =
-          this.target;
-        const nextIndex = filtered.indexMap.map(i => currentIndex[i]);
-        // @ts-ignore
-        return this.target._nextReader(
-          typeName,
-          currentOffset,
-          nextIndex,
-          currentLength
-        );
+        return this._reindex(filtered.indexMap);
       }
     };
   }
@@ -95,26 +107,7 @@ export class ReaderApply<T extends Reader<Multiple> = Reader<Multiple>> {
         const value = where(this.target).value<V>();
         if (value == null) return this.target;
         const sorted = value.sort(fn);
-
-        if (this.target instanceof NestedReader) {
-          const { _get, indexMap } = this.target.readers;
-          const nextIndexMap = sorted.indexMap.map(i => indexMap[i]);
-          return new NestedReader(
-            new LazyArray(_get, nextIndexMap),
-            this.target.ref
-          );
-        }
-
-        const { typeName, currentOffset, currentIndex, currentLength } =
-          this.target;
-        const nextIndex = sorted.indexMap.map(i => currentIndex[i]);
-        // @ts-ignore
-        return this.target._nextReader(
-          typeName,
-          currentOffset,
-          nextIndex,
-          currentLength
-        );
+        return this._reindex(sorted.indexMap);
       }
     };
   }
@@ -125,28 +118,7 @@ export class ReaderApply<T extends Reader<Multiple> = Reader<Multiple>> {
         const value = where(this.target).value<V>();
         if (value == null) return this.target;
         const matched = value.findAll(target, matchFn);
-
-        if (this.target instanceof NestedReader) {
-          const { _get, indexMap } = this.target.readers;
-          const nextIndexMap = matched.indexMap.map(i =>
-            i < 0 ? -1 : indexMap[i]
-          );
-          return new NestedReader(
-            new LazyArray(_get, nextIndexMap),
-            this.target.ref
-          );
-        }
-
-        const { typeName, currentOffset, currentIndex, currentLength } =
-          this.target;
-        const nextIndex = matched.indexMap.map(i => currentIndex[i]);
-        // @ts-ignore
-        return this.target._nextReader(
-          typeName,
-          currentOffset,
-          nextIndex,
-          currentLength
-        );
+        return this._reindex(matched.indexMap);
       }
     };
   }
@@ -160,12 +132,31 @@ export class ReaderApply<T extends Reader<Multiple> = Reader<Multiple>> {
           );
           return new NestedReader(nextReaders, this.target.ref);
         }
-        const reader = where(this.target);
-        const { typeName, currentOffset, currentIndex, currentLength } =
-          this.target;
-        const nextIndex = currentIndex.filter(
-          (_, i) => reader.currentIndex[i] >= 0
-        );
+
+        const currentIndex = (
+          this.target instanceof BranchedReader
+            ? this.target.rootIndex
+            : this.target.currentIndex
+        ) as Int32Array;
+        const whereReader = where(this.target);
+        const whereIndex = (
+          whereReader instanceof BranchedReader
+            ? whereReader.rootIndex
+            : whereReader.currentIndex
+        ) as Int32Array;
+        const nextIndex = currentIndex.filter((_, i) => whereIndex[i] >= 0);
+
+        if (this.target instanceof BranchedReader) {
+          const { branches, currentBranch, discriminator } = this.target;
+          return new BranchedReader(
+            branches,
+            currentBranch,
+            discriminator,
+            nextIndex
+          );
+        }
+
+        const { typeName, currentOffset, currentLength } = this.target;
         // @ts-ignore
         return this.target._nextReader(
           typeName,
@@ -176,36 +167,82 @@ export class ReaderApply<T extends Reader<Multiple> = Reader<Multiple>> {
       }
     };
   }
+
+  private _reindex(indexMap: Int32Array): Reader<Multiple> {
+    const currentIndex = (
+      this.target instanceof NestedReader
+        ? this.target.readers.indexMap
+        : this.target instanceof BranchedReader
+        ? this.target.rootIndex
+        : this.target.currentIndex
+    ) as Int32Array;
+    const nextIndex = indexMap.map(i => currentIndex[i]);
+
+    if (this.target instanceof NestedReader) {
+      return new NestedReader(
+        new LazyArray(this.target.readers._get, nextIndex),
+        this.target.ref
+      );
+    }
+
+    if (this.target instanceof BranchedReader) {
+      const { branches, currentBranch, discriminator } = this.target;
+      return new BranchedReader(
+        branches,
+        currentBranch,
+        discriminator,
+        nextIndex
+      ) as Reader<Multiple>;
+    }
+
+    const { typeName, currentOffset, currentLength } = this.target;
+    // @ts-ignore
+    return this.target._nextReader(
+      typeName,
+      currentOffset,
+      nextIndex,
+      currentLength
+    );
+  }
 }
 
 type ReaderApplyForEachCheck = (reader: Reader<boolean>) => boolean;
 type ReaderApplyForEachApply = (reader: Reader<boolean>) => ReaderApply;
+type ReaderApplyForEachRef = (reader: Reader<boolean>) => NestedReader;
 
 export class ReaderApplyForEach extends ReaderApply<NestedReader> {
-  _check: ReaderApplyForEachCheck;
   _apply: ReaderApplyForEachApply;
+  _check: ReaderApplyForEachCheck;
+  _ref: ReaderApplyForEachRef;
 
   constructor(
     target: NestedReader,
+    _apply: ReaderApplyForEachApply = reader => reader.apply,
     _check: ReaderApplyForEachCheck = reader => !reader.singleValue(),
-    _apply: ReaderApplyForEachApply = reader => reader.apply
+    _ref: ReaderApplyForEachRef = reader => reader as NestedReader
   ) {
     super(target);
     this._check = _check;
     this._apply = _apply;
+    this._ref = _ref;
   }
 
   get forEach(): ReaderApplyForEach {
+    if (!(this._ref(this.target).ref instanceof NestedReader)) {
+      throw new UsageError('Maximum depth reached with apply.forEach');
+    }
     return new ReaderApplyForEach(
       this.target,
-      reader => reader instanceof NestedReader,
-      reader => this._apply(reader).forEach
+      reader => this._apply(reader).forEach,
+      reader =>
+        this._check(reader) && this._ref(reader) instanceof NestedReader,
+      reader => this._ref(reader).ref as NestedReader
     );
   }
 
   reverse() {
     const nextReaders: LazyArray<Reader<boolean>> = this.target.readers.map(
-      reader => this._check(reader) ? this._apply(reader).reverse() : reader
+      reader => (this._check(reader) ? this._apply(reader).reverse() : reader)
     );
     return new NestedReader(nextReaders, this.target.ref);
   }
