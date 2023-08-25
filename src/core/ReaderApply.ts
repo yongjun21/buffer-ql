@@ -1,15 +1,24 @@
 import { NestedReader } from './Readers.js';
 import { LazyArray } from './LazyArray.js';
 
+import { UsageError } from '../helpers/error.js';
+
 import type { Reader, Multiple } from './Readers.js';
 
 type ReaderApplyWhere = (reader: Reader<Multiple>) => Reader<Multiple>;
 
-export class ReaderApply {
-  target: Reader<Multiple>;
+export class ReaderApply<T extends Reader<Multiple> = Reader<Multiple>> {
+  target: T;
 
-  constructor(target: Reader<Multiple>) {
+  constructor(target: T) {
     this.target = target;
+  }
+
+  get forEach() {
+    if (!(this.target instanceof NestedReader)) {
+      throw new UsageError('Calling apply.forEach on a non-nested reader');
+    }
+    return new ReaderApplyForEach(this.target);
   }
 
   reverse() {
@@ -169,39 +178,55 @@ export class ReaderApply {
   }
 }
 
-export class NestedReaderSplitApply {
-  target: NestedReader;
+type ReaderApplyForEachCheck = (reader: Reader<boolean>) => boolean;
+type ReaderApplyForEachApply = (reader: Reader<boolean>) => ReaderApply;
 
-  constructor(target: NestedReader) {
-    this.target = target;
+export class ReaderApplyForEach extends ReaderApply<NestedReader> {
+  _check: ReaderApplyForEachCheck;
+  _apply: ReaderApplyForEachApply;
+
+  constructor(
+    target: NestedReader,
+    _check: ReaderApplyForEachCheck = reader => !reader.singleValue(),
+    _apply: ReaderApplyForEachApply = reader => reader.apply
+  ) {
+    super(target);
+    this._check = _check;
+    this._apply = _apply;
+  }
+
+  get forEach(): ReaderApplyForEach {
+    return new ReaderApplyForEach(
+      this.target,
+      reader => reader instanceof NestedReader,
+      reader => this._apply(reader).forEach
+    );
   }
 
   reverse() {
-    const nextReaders = this.target.readers.map(reader => {
-      return reader.singleValue()
-        ? reader
-        : (reader as Reader<Multiple>).apply().reverse();
-    });
+    const nextReaders: LazyArray<Reader<boolean>> = this.target.readers.map(
+      reader => (this._check(reader) ? this._apply(reader).reverse() : reader)
+    );
     return new NestedReader(nextReaders, this.target.ref);
   }
 
   slice(start?: number, end?: number) {
-    const nextReaders = this.target.readers.map(reader => {
-      return reader.singleValue()
-        ? reader
-        : (reader as Reader<Multiple>).apply().slice(start, end);
-    });
+    const nextReaders: LazyArray<Reader<boolean>> = this.target.readers.map(
+      reader =>
+        this._check(reader) ? this._apply(reader).slice(start, end) : reader
+    );
     return new NestedReader(nextReaders, this.target.ref);
   }
 
   filter<V>(fn: (v: V, i: number) => any) {
     return {
       on: (where: ReaderApplyWhere = reader => reader) => {
-        const nextReaders = this.target.readers.map(reader => {
-          return reader.singleValue()
-            ? reader
-            : (reader as Reader<Multiple>).apply().filter(fn).on(where);
-        });
+        const nextReaders: LazyArray<Reader<boolean>> = this.target.readers.map(
+          reader =>
+            this._check(reader)
+              ? this._apply(reader).filter(fn).on(where)
+              : reader
+        );
         return new NestedReader(nextReaders, this.target.ref);
       }
     };
@@ -210,11 +235,12 @@ export class NestedReaderSplitApply {
   sort<V>(fn: (a: V, b: V) => number) {
     return {
       on: (where: ReaderApplyWhere = reader => reader) => {
-        const nextReaders = this.target.readers.map(reader => {
-          return reader.singleValue()
-            ? reader
-            : (reader as Reader<Multiple>).apply().sort(fn).on(where);
-        });
+        const nextReaders: LazyArray<Reader<boolean>> = this.target.readers.map(
+          reader =>
+            this._check(reader)
+              ? this._apply(reader).sort(fn).on(where)
+              : reader
+        );
         return new NestedReader(nextReaders, this.target.ref);
       }
     };
@@ -223,14 +249,12 @@ export class NestedReaderSplitApply {
   findAll<V>(target: LazyArray<V>, matchFn: (a: V, b: V) => boolean) {
     return {
       on: (where: ReaderApplyWhere = reader => reader) => {
-        const nextReaders = this.target.readers.map(reader => {
-          return reader.singleValue()
-            ? reader
-            : (reader as Reader<Multiple>)
-                .apply()
-                .findAll(target, matchFn)
-                .on(where);
-        });
+        const nextReaders: LazyArray<Reader<boolean>> = this.target.readers.map(
+          reader =>
+            this._check(reader)
+              ? this._apply(reader).findAll(target, matchFn).on(where)
+              : reader
+        );
         return new NestedReader(nextReaders, this.target.ref);
       }
     };
@@ -239,11 +263,12 @@ export class NestedReaderSplitApply {
   dropNull() {
     return {
       on: (where: ReaderApplyWhere = reader => reader) => {
-        const nextReaders = this.target.readers.map(reader => {
-          return reader.singleValue()
-            ? reader
-            : (reader as Reader<Multiple>).apply().dropNull().on(where);
-        });
+        const nextReaders: LazyArray<Reader<boolean>> = this.target.readers.map(
+          reader =>
+            this._check(reader)
+              ? this._apply(reader).dropNull().on(where)
+              : reader
+        );
         return new NestedReader(nextReaders, this.target.ref);
       }
     };

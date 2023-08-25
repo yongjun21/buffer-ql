@@ -1,4 +1,4 @@
-import { ReaderApply, NestedReaderSplitApply } from './ReaderApply.js';
+import { ReaderApply } from './ReaderApply.js';
 import { LazyArray, getDefaultIndexMap } from './LazyArray.js';
 
 import {
@@ -525,15 +525,11 @@ export class Reader<T extends boolean = Single> {
     }
   }
 
-  apply() {
+  get apply() {
     if (this.singleValue()) {
       throw new UsageError('Calling apply on a single value reader');
     }
     return new ReaderApply(this as Reader<Multiple>);
-  }
-
-  splitApply(): NestedReaderSplitApply {
-    throw new UsageError('Calling splitApply on a non-nested reader');
   }
 
   dump(TypedArray: TypedArrayConstructor = Uint8Array) {
@@ -641,10 +637,6 @@ export class NestedReader extends Reader<Multiple> {
     const nextReaders = this.readers.map(reader => reader.get(key));
     const nextRef = this.ref.get(key);
     return new NestedReader(nextReaders, nextRef);
-  }
-
-  splitApply() {
-    return new NestedReaderSplitApply(this);
   }
 
   _computeDump() {

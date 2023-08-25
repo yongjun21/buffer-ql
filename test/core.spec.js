@@ -40,20 +40,16 @@ const trackedEntitiesReader = new Reader('#', 0).get('trackedEntities');
 
 const filtered = trackedEntitiesReader
   .get(ALL_VALUES)
-  .apply()
-  .filter(v => v === 3)
+  .apply.filter(v => v === 3)
   .on(reader => reader.get('class'))
   .get('waypoints')
-  .apply()
-  .dropNull()
+  .apply.dropNull()
   .on()
   .get(ALL_VALUES)
-  .splitApply()
-  .dropNull()
+  .apply.forEach.dropNull()
   .on(reader => reader.get('probability'))
-  .splitApply()
-  .filter(v => v > 0.7)
-  .on(reader => reader.get('probability'))
+  .apply.forEach.filter(v => v > 0.7)
+  .on(reader => reader.get('probability'));
 
 console.log(filtered.value());
 
