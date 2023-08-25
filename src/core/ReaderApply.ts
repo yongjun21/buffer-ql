@@ -205,7 +205,7 @@ export class ReaderApplyForEach extends ReaderApply<NestedReader> {
 
   reverse() {
     const nextReaders: LazyArray<Reader<boolean>> = this.target.readers.map(
-      reader => (this._check(reader) ? this._apply(reader).reverse() : reader)
+      reader => this._check(reader) ? this._apply(reader).reverse() : reader
     );
     return new NestedReader(nextReaders, this.target.ref);
   }
