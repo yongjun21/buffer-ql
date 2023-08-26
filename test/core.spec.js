@@ -1,15 +1,13 @@
 import { encodeWithSchema, createReader, ALL_VALUES, LazyArray } from '../dist/index.js';
 
-import trackedEntities from './dummyData.json' assert { type: 'json' };
+import DUMMY_DATA from './dummyData.json' assert { type: 'json' };
 import { SCHEMA } from './schema.js';
 
-const DUMMY_DATA = {
-  trackedEntities,
-  trackedEntitiesOfInterest: {
-    nearest: trackedEntities[0],
-    mostConstraining: trackedEntities[2]
-  }
-};
+const { trackedEntities, trackedEntitiesOfInterest } = DUMMY_DATA;
+
+for (const key in trackedEntitiesOfInterest) {
+  trackedEntitiesOfInterest[key] = trackedEntities[trackedEntitiesOfInterest[key]];
+}
 
 const encoded = encodeWithSchema(DUMMY_DATA, SCHEMA, '#');
 
@@ -38,7 +36,7 @@ console.log(LazyArray.getNestedDepth(decoded));
 
 const filtered = trackedEntitiesReader
   .get(ALL_VALUES)
-  .apply.filter(v => v === 3)
+  .apply.filter(v => v === 2)
   .on(reader => reader.get('class'))
   .get('waypoints')
   .apply.dropNull()
@@ -46,7 +44,7 @@ const filtered = trackedEntitiesReader
   .get(ALL_VALUES)
   .apply.forEach.dropNull()
   .on(reader => reader.get('probability'))
-  .apply.forEach.filter(v => v > 0.7)
+  .apply.forEach.filter(v => v > 0.5)
   .on(reader => reader.get('probability'))
   .get('pose')
   .get('position');

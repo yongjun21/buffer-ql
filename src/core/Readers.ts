@@ -137,12 +137,13 @@ export class Reader<T extends boolean = Single> {
   }
 
   value<U = any>(): ValueReturnType<U, T> | undefined {
+    const _currentIndex = this.currentIndex as Int32Array;
     if (this.isPrimitive()) {
       return this.singleValue()
         ? this._primitiveValueAt(this.currentIndex)
         : new LazyArray<U>(
-            i => this._primitiveValueAt(i),
-            this.currentIndex as Int32Array
+            i => this._primitiveValueAt(_currentIndex[i]),
+            _currentIndex.length
           );
     }
     const refCache = createRefCache();
@@ -150,8 +151,8 @@ export class Reader<T extends boolean = Single> {
       this.singleValue()
         ? this._compoundValueAt(this.currentIndex, refCache)
         : new LazyArray<U>(
-            i => this._compoundValueAt(i, refCache),
-            this.currentIndex as Int32Array
+            i => this._compoundValueAt(_currentIndex[i], refCache),
+            _currentIndex.length
           )
     ) as ValueReturnType<U, T>;
   }

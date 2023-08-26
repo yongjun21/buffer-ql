@@ -3,7 +3,13 @@ const fs = require('fs');
 
 const trackedEntities = generateTrackedEntitiesArray(10);
 trackedEntities[1].waypoints = [];
-const dummyData = trackedEntities;
+const dummyData = {
+  trackedEntities,
+  trackedEntitiesOfInterest: {
+    nearest: 0,
+    mostConstraining: 2
+  }
+};
 
 fs.writeFileSync(
   path.join(__dirname, 'dummyData.json'),
@@ -15,7 +21,7 @@ function generateTrackedEntitiesArray(count) {
   for (let i = 0; i < count; i++) {
     entities.push({
       id: i + 1,
-      class: i % 3 + 1,
+      class: (i % 3) + 1,
       pose: generatePose(),
       velocity: i % 3 === 0 ? generateVector3() : undefined,
       source: generateTrackedEntitySource(),
