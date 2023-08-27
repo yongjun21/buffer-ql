@@ -8,9 +8,17 @@
   "scripts": {
     "build": "tsc"
   },
-  "author": "Yong Jun",
-  "license": "MIT",
   "devDependencies": {
     "typescript": "^5.1.6"
-  }
+  },
+  "author": "Yong Jun",
+  "license": "GPL-3.0-or-later",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yongjun21/buffer-ql.git"
+  },
+  "bugs": {
+    "url": "https://github.com/yongjun21/buffer-ql/issues"
+  },
+  "homepage": "https://github.com/yongjun21/buffer-ql#readme"
 }
