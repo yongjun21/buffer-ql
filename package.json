@@ -1,9 +1,9 @@
 {
-  "name": "pandas-buffer",
+  "name": "buffer-ql",
   "version": "0.0.0",
-  "description": "Data structure optimized for visualization",
+  "description": "A set of tools to encode any data structure to buffer and consume without deserialization",
   "type": "module",
-  "main": "dist/index.mjs",
+  "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
     "build": "tsc"

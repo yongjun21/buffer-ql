@@ -1,11 +1,13 @@
-# Data tooling optimized for visualization
+# Buffer Query Language
+
+A set of tools to encode any data structure to buffer and consume without deserialization
 
 ## Key components
 1. **Data schema** representation that is simple to use yet giving user enough flexibility to support fairly complicated data shape
 2. **Data container** backed by a custom highly efficient buffer format
 3. **Data reader** to extract values from data container efficiently without the need to fully decode the data content
-4. **Custom data structure** for manipulating data with a simple API resembling that of JS arrays and objects
-5. **Data encoder** to write data into data container according to user provided data schema
+4. **Custom data structure** for manipulating data with a simple API not very different from JS arrays and objects
+5. **Data encoder** to serialize data into data container according to user provided data schema
 
 ## Main features
 - Data encoded into buffer format for maximum efficiency
@@ -14,7 +16,7 @@
   - Avoid generating many JS objects since skipping full unpacking
 - Introduce a powerful data handling tool that is simple enough to use yet abstract away many complex data operations and optimizations
   - "Lazy" by default
-  - Data operation starts only in the final consumption step
+  - Real data operation starts only in the final consumption step
   - Process data in columns as opposed to the row style that is more common in JavaScript
 - Simple yet powerful language for data schema representation
   - Supports all common data types:
@@ -91,7 +93,7 @@
 ### Define a schema
 ```js
 // schema.js
-import { extendSchema } from 'this-library';
+import { extendSchema } from 'buffer-ql';
 
 export const SCHEMA = extendSchema(
   {
@@ -119,7 +121,7 @@ export const SCHEMA = extendSchema(
 ### Create new reader from data schema
 ```js
 // read.js
-import { createReader, ALL_VALUES } from 'this-library';
+import { createReader, ALL_VALUES } from 'buffer-ql';
 import SCHEMA from './schema.js';
 
 const Reader = createReader(buffer, SCHEMA);
@@ -195,7 +197,7 @@ const unpacked = [...waypoints.map(pts => [...pts])];
 
 ### Initialize a lazy array
 ```js
-import { LazyArray } from 'this-library'
+import { LazyArray } from 'buffer-ql';
 
 // by providing a read-only array
 const arr1 = new LazyArray(source);
@@ -342,7 +344,7 @@ const mapped = new LazyArray(combined, columnA.length)
 - currently only implemented for NodeJs. Will be adding Pylon encoder soon.
 
 ```js
-import { encodeWithSchema } from 'this-library';
+import { encodeWithSchema } from 'buffer-ql';
 import { SCHEMA } from './schema.js';
 
 const encoded = encodeWithSchema(DATA, SCHEMA, '#');
