@@ -1,10 +1,13 @@
 {
   "name": "buffer-ql",
-  "version": "0.0.0",
+  "version": "0.0.1",
   "description": "A set of tools to encode any data structure to buffer and consume without deserialization",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc"
   },
