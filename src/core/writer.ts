@@ -1,5 +1,3 @@
-/* eslint-disable dot-notation */
-import { LazyArray } from './LazyArray.js';
 import {
   bitToIndex,
   oneOfToIndex,
@@ -21,12 +19,12 @@ export function encodeWithSchema(data: any, schema: Schema, rootType: string) {
   class Writer {
     typeName: string;
     currentType: Schema[string];
-    currentSource: LazyArray<any>;
+    currentSource: any[];
     currentOffset = -1;
     bitmasks: Iterable<number>[] = [];
     branches: any[] = [];
 
-    constructor(type: string, source: LazyArray<any>) {
+    constructor(type: string, source: any[]) {
       this.typeName = type;
       this.currentType = schema[type];
       this.currentSource = source;
@@ -91,8 +89,8 @@ export function encodeWithSchema(data: any, schema: Schema, rootType: string) {
 
       const { transform } = currentType;
       const currentSource = transform
-        ? _currentSource.map(transform).eagerEvaluate()
-        : _currentSource.eagerEvaluate();
+        ? _currentSource.map(transform)
+        : _currentSource;
 
       if (this.isTuple()) {
         const { children } = currentType as SchemaCompoundType<'Tuple'>;
@@ -111,12 +109,9 @@ export function encodeWithSchema(data: any, schema: Schema, rootType: string) {
         const {
           children: [nextType]
         } = currentType as SchemaCompoundType<'Array'>;
-        const writers = currentSource
-          .map((value: ArrayLike<any>) => {
-            const nextSource = new LazyArray(value);
-            return new Writer(nextType, nextSource);
-          })
-          .copyTo(Array) as Writer[];
+        const writers = currentSource.map(
+          (nextSource: any[]) => new Writer(nextType, nextSource)
+        );
         nextBranches.push(
           writers.length > 1 ? new WriterGroup(writers) : writers[0]
         );
@@ -124,18 +119,12 @@ export function encodeWithSchema(data: any, schema: Schema, rootType: string) {
         const {
           children: [nextType]
         } = currentType as SchemaCompoundType<'Map'>;
-        const keyWriters = currentSource
-          .map((value: Record<string, any>) => {
-            const keyNextSource = new LazyArray(Object.keys(value));
-            return new Writer('String', keyNextSource);
-          })
-          .copyTo(Array) as Writer[];
-        const valWriters = currentSource
-          .map((value: Record<string, any>) => {
-            const valueNextSource = new LazyArray(Object.values(value));
-            return new Writer(nextType, valueNextSource);
-          })
-          .copyTo(Array) as Writer[];
+        const keyWriters = currentSource.map((value: Record<string, any>) => {
+          return new Writer('String', Object.keys(value));
+        });
+        const valWriters = currentSource.map((value: Record<string, any>) => {
+          return new Writer(nextType, Object.values(value));
+        });
         nextBranches.push(
           keyWriters.length > 1 ? new WriterGroup(keyWriters) : keyWriters[0],
           valWriters.length > 1 ? new WriterGroup(valWriters) : valWriters[0]
@@ -153,10 +142,10 @@ export function encodeWithSchema(data: any, schema: Schema, rootType: string) {
         const bitmask = bitToIndex(discriminator);
         this.bitmasks.push(bitmask);
 
-        const nextSource = new LazyArray(
-          currentSource._get,
-          backwardMapIndexes(currentLength, bitmask).asInt32Array()
-        );
+        const nextSource: any[] = [];
+        for (const i of backwardMapIndexes(currentLength, bitmask)) {
+          nextSource.push(currentSource[i]);
+        }
         nextBranches.push(new Writer(nextType, nextSource));
       } else if (this.isOneOf()) {
         const { children } = currentType as SchemaCompoundType<'OneOf'>;
@@ -178,10 +167,10 @@ export function encodeWithSchema(data: any, schema: Schema, rootType: string) {
         const backwardIndexes = backwardMapOneOf(currentLength, ...bitmasks);
         backwardIndexes.forEach((indexes, k) => {
           const nextType = children[k];
-          const nextSource = new LazyArray(
-            currentSource._get,
-            indexes.asInt32Array()
-          );
+          const nextSource: any[] = [];
+          for (const i of indexes) {
+            nextSource.push(currentSource[i]);
+          }
           nextBranches.push(new Writer(nextType, nextSource));
         });
       }
@@ -384,7 +373,7 @@ export function encodeWithSchema(data: any, schema: Schema, rootType: string) {
 
   const orderedWriters: Record<string, Writer[]> = {};
   const stack: Writer[] = [];
-  const root = new Writer(rootType, new LazyArray(() => data, 1));
+  const root = new Writer(rootType, [data]);
   stack.push(root);
 
   while (stack.length > 0) {
@@ -409,7 +398,7 @@ export function encodeWithSchema(data: any, schema: Schema, rootType: string) {
   const dv = new DataView(buffer);
 
   const stringWriter = createStringWriter(offset);
-  for (const writer of orderedWriters['String']) {
+  for (const writer of orderedWriters.String) {
     writer.write(dv, stringWriter);
   }
   const stringBuffer = stringWriter.export();
