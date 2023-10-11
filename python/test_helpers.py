@@ -1,4 +1,4 @@
-from helpers.bitmask import (
+from buffer_ql.helpers.bitmask import (
     encode_bitmask,
     decode_bitmask,
     index_to_bit,
