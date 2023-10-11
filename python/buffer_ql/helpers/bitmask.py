@@ -37,9 +37,8 @@ def encode_bitmask(iterable, n):
     curr_index = 0
     next_value = None
 
-    try:
-        next_value = next(input_iter)
-    except StopIteration:
+    next_value = next(input_iter, None)
+    if next_value is None:
         return bytes([0])
 
     while stack:
@@ -57,10 +56,7 @@ def encode_bitmask(iterable, n):
         if level == 0:
             if next_value == curr_index:
                 writer(1)
-                try:
-                    next_value = next(input_iter)
-                except StopIteration:
-                    next_value = None
+                next_value = next(input_iter, None)
             else:
                 writer(0)
             curr_index += 1
@@ -230,17 +226,14 @@ def backward_map_single_index(decoded_bitmask, index, equals=1):
 
 def chain_forward_indexes(curr_mapped, next_mapped):
     class Iter:
-      def __iter__(self):
-          next_iter = iter(next_mapped)
-          for i in curr_mapped:
-              if i < 0:
-                  yield -1
-              else:
-                  try:
-                      next_value = next(next_iter)
-                      yield next_value
-                  except StopIteration:
-                      yield -1
+        def __iter__(self):
+            next_iter = iter(next_mapped)
+            for i in curr_mapped:
+                if i < 0:
+                    yield -1
+                else:
+                    next_value = next(next_iter, None)
+                    yield -1 if next_value is None else next_value
     return Iter()
 
 def chain_backward_indexes(curr_mapped, next_mapped):
@@ -273,19 +266,18 @@ def forward_map_one_of(n, *decoded_bitmasks):
             index = 0
             while True:
                 for k in range(self.kn + 1):
-                    try:
-                        next_value = next(_iters[k])
-                        if k < self.kn:
-                            if not next_value:
-                                yield -1
-                                break
-                        elif next_value:
-                            yield -1
-                        else:
-                            yield index
-                            index += 1
-                    except StopIteration:
+                    next_value = next(_iters[k], None)
+                    if next_value is None:
                         return
+                    if k < self.kn:
+                        if not next_value:
+                            yield -1
+                            break
+                    elif next_value:
+                        yield -1
+                    else:
+                        yield index
+                        index += 1
 
     return [Iter(kn) for kn in range(len(iters))]
 
@@ -303,15 +295,14 @@ def backward_map_one_of(n, *decoded_bitmasks):
             index = 0
             while True:
                 for k in range(self.kn + 1):
-                    try:
-                        next_value = next(_iters[k])
-                        if k < self.kn:
-                            if not next_value:
-                                break
-                        elif not next_value:
-                            yield index
-                    except StopIteration:
+                    next_value = next(_iters[k], None)
+                    if next_value is None:
                         return
+                    if k < self.kn:
+                        if not next_value:
+                            break
+                    elif not next_value:
+                        yield index
                 index += 1
 
     return [Iter(kn) for kn in range(len(iters))]
@@ -380,7 +371,3 @@ def write_bit(arr):
 def always_zero():
     while True:
         yield 0
-
-
-class StopOuterLoop(Exception):
-    pass
