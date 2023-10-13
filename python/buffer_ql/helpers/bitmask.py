@@ -49,7 +49,6 @@ def encode_bitmask(iterable, n):
         leaf_count = 1 << level
 
         if next_value is None:
-            writer(0)
             curr_index += leaf_count
             continue
 
@@ -90,16 +89,14 @@ def one_of_to_index(iterable, no_of_class):
 
         def __iter__(self):
             index = 0
-            curr = 0
+            curr = -1
             for n in iterable:
-                if n >= self.k:
-                    b = 1 if n > self.k else 0
-                    if b != curr:
-                        yield index
-                        curr = b
-                    index += 1
+                if n == self.k and n != curr:
+                    yield index
+                curr = n
+                index += 1
 
-    return [Iter(k) for k in range(no_of_class - 1)]
+    return [Iter(k) for k in range(no_of_class)]
 
 
 def index_to_bit(n, decoded_bitmask):
@@ -119,22 +116,15 @@ def index_to_bit(n, decoded_bitmask):
 
     return Iter()
 
-
 def index_to_one_of(n, *decoded_bitmasks):
-    iters = [index_to_bit(n, decoded_bitmask) for decoded_bitmask in decoded_bitmasks]
-    iters.append(always_zero())
-
     class Iter:
         def __iter__(self):
-            _iters = [iter(iterable) for iterable in iters]
-            while True:
-                for k in range(len(iters)):
-                    next_value = next(_iters[k], None)
-                    if next_value is None:
-                        return
-                    if not next_value:
-                        yield k
-                        break
+            index = 0
+            for curr, until in one_of_loop(n, decoded_bitmasks):
+                while index < until:
+                    yield curr
+                    index += 1
+
     return Iter()
 
 
@@ -254,78 +244,127 @@ def chain_backward_indexes(curr_mapped, next_mapped):
 
 
 def forward_map_one_of(n, *decoded_bitmasks):
-    iters = [index_to_bit(n, decoded_bitmask) for decoded_bitmask in decoded_bitmasks]
-    iters.append(always_zero())
-
     class Iter:
-        def __init__(self, kn):
-            self.kn = kn
+        def __init__(self, k):
+            self.k = k
 
         def __iter__(self):
-            _iters = [iter(iterable) for iterable in iters[:self.kn + 1]]
+            ones = 0
             index = 0
-            while True:
-                for k in range(self.kn + 1):
-                    next_value = next(_iters[k], None)
-                    if next_value is None:
-                        return
-                    if k < self.kn:
-                        if not next_value:
-                            yield -1
-                            break
-                    elif next_value:
+            for curr, until in one_of_loop(n, decoded_bitmasks):
+                if curr == self.k:
+                    while index < until:
+                        yield ones
+                        ones += 1
+                        index += 1
+                else:
+                    while index < until:
                         yield -1
-                    else:
-                        yield index
                         index += 1
 
-    return [Iter(kn) for kn in range(len(iters))]
+    return [Iter(k) for k in range(len(decoded_bitmasks))]
 
 
 def backward_map_one_of(n, *decoded_bitmasks):
-    iters = [index_to_bit(n, decoded_bitmask) for decoded_bitmask in decoded_bitmasks]
-    iters.append(always_zero())
-
     class Iter:
-        def __init__(self, kn):
-            self.kn = kn
+        def __init__(self, k):
+            self.k = k
 
         def __iter__(self):
-            _iters = [iter(iterable) for iterable in iters[:self.kn + 1]]
             index = 0
-            while True:
-                for k in range(self.kn + 1):
-                    next_value = next(_iters[k], None)
-                    if next_value is None:
-                        return
-                    if k < self.kn:
-                        if not next_value:
-                            break
-                    elif not next_value:
+            for curr, until in one_of_loop(n, decoded_bitmasks):
+                if curr == self.k:
+                    while index < until:
                         yield index
-                index += 1
+                        index += 1
+                else:
+                    index = until
 
-    return [Iter(kn) for kn in range(len(iters))]
+    return [Iter(k) for k in range(len(decoded_bitmasks))]
 
 
 def forward_map_single_one_of(index, *decoded_bitmasks):
     if index < 0:
         return [0, -1]
+
     k_max = len(decoded_bitmasks)
-    for k in range(k_max):
-        mapped = forward_map_single_index(decoded_bitmasks[k], index, 0)
-        if mapped >= 0:
-            return [k, mapped]
-        index = forward_map_single_index(decoded_bitmasks[k], index, 1)
-    return [k_max, index]
+    zeros = [0] * k_max
+    ones = [0] * k_max
+    last_curr = -1
+
+    for curr, until in one_of_loop(1 << 32, decoded_bitmasks):
+        last_curr = curr
+        for k in range(k_max):
+            if curr == k:
+                ones[k] = until - zeros[k]
+            else:
+                zeros[k] = until - ones[k]
+        if index < until:
+            break
+
+    return [last_curr, index - zeros[last_curr]]
 
 
 def backward_map_single_one_of(group, index, *decoded_bitmasks):
-    if group < len(decoded_bitmasks):
-        index = backward_map_single_index(decoded_bitmasks[group], index, 0)
-    for k in range(group - 1, -1, -1):
-        index = backward_map_single_index(decoded_bitmasks[k], index, 1)
-    return index
+    zeros = 0
+    ones = 0
+    is_curr = False
+    for curr, until in one_of_loop(1 << 32, decoded_bitmasks):
+        is_curr = curr == group
+        if is_curr:
+            ones = until - zeros
+            if index < ones:
+                break
+        else:
+            zeros = until - ones
+    return index + zeros if is_curr else -1
+
+
+def diff_indexes(curr_indexes, next_indexes):
+    class Iter:
+        def __iter__(self):
+            curr_iter = iter(curr_indexes)
+            curr_index = next(curr_iter, None)
+
+            for next_index in next_indexes:
+                while curr_index is not None and curr_index < next_index:
+                    yield curr_index
+                    curr_index = next(curr_iter, None)
+
+                if curr_index is None or curr_index > next_index:
+                    yield next_index
+                else:
+                    curr_index = next(curr_iter, None)
+
+    return Iter()
+
+
+def one_of_loop(n, decoded_bitmasks):
+    iters = [iter(decoded_bitmask) for decoded_bitmask in decoded_bitmasks]
+
+    next_indexes = [next(iter, n) for iter in iters]
+
+    curr = next_indexes.index(0)
+    next_indexes[curr] = next(iters[curr], n)
+
+    while True:
+        min_k = -1
+        min_index = n
+        
+        for k, i in enumerate(next_indexes):
+            if i < min_index:
+                min_k = k
+                min_index = i
+
+        if min_index == n:
+            break
+
+        next_indexes[min_k] = next(iters[min_k], n)
+
+        yield (curr, min_index)
+        curr = min_k
+
+    yield (curr, n)
 
 
 def read_bit(arr):

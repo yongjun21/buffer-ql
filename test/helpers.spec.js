@@ -3,6 +3,7 @@ import {
   decodeBitmask,
   indexToBit,
   indexToOneOf,
+  oneOfToIndex,
   forwardMapIndexes,
   backwardMapIndexes,
   forwardMapSingleIndex,
@@ -12,7 +13,8 @@ import {
   forwardMapOneOf,
   backwardMapOneOf,
   forwardMapSingleOneOf,
-  backwardMapSingleOneOf
+  backwardMapSingleOneOf,
+  diffIndexes,
 } from '../dist/index.js';
 
 testBitmask();
@@ -38,16 +40,27 @@ function testBitmask() {
     backwardIndexes.map((_, i) => backwardMapSingleIndex(decoded, i))
   );
 
-  const discriminator = indexToOneOf(32, decoded, decoded).asUint8Array();
-  const forwardOneOf = forwardMapOneOf(32, decoded, decoded);
-  const backwardOneOf = backwardMapOneOf(32, decoded, decoded);
-  console.log(discriminator);
+  const test2 = [
+    0, 0, 0, 1, 1, 1, 0, 2, 2,
+    2, 1, 2, 2, 2, 2, 2, 2, 2,
+    2, 2, 2, 0, 0, 0, 0, 0, 0,
+    0, 2, 2, 2, 2
+  ];
+  const oneOfBitmasks = oneOfToIndex(test2, 3);
+  console.log(oneOfBitmasks.map(iter => [...iter]));
+  const discriminator = indexToOneOf(32, ...oneOfBitmasks);
+  const forwardOneOf = forwardMapOneOf(32, ...oneOfBitmasks);
+  const backwardOneOf = backwardMapOneOf(32, ...oneOfBitmasks);
+  console.log(discriminator.asUint8Array());
   console.log(forwardOneOf.map(iter => iter.asInt32Array()));
   console.log(backwardOneOf.map(iter => iter.asInt32Array()));
 
   console.log(
-    [...discriminator]
-      .map((_, i) => forwardMapSingleOneOf(i, decoded, decoded))
-      .map(([k, i]) => backwardMapSingleOneOf(k, i, decoded, decoded))
+    test2
+      .map((_, i) => forwardMapSingleOneOf(i, ...oneOfBitmasks))
+      .map(([k, i]) => backwardMapSingleOneOf(k, i, ...oneOfBitmasks))
   );
+  
+  const test3 = [1, 2, 3, 4, 5, 6, 7, 8];
+  console.log([...diffIndexes(test, test3)]);
 }

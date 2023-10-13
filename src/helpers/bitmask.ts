@@ -54,7 +54,6 @@ export function encodeBitmask(iter: Iterable<number>, n: number) {
     const leafCount = 1 << level;
 
     if (next.done) {
-      writer(0);
       currIndex += leafCount;
       continue;
     }
@@ -64,7 +63,7 @@ export function encodeBitmask(iter: Iterable<number>, n: number) {
         length = writer(1);
         next = input.next();
       } else {
-        writer(0);
+        length = writer(0);
       }
       currIndex++;
     } else if (currIndex + leafCount > next.value) {
@@ -72,7 +71,7 @@ export function encodeBitmask(iter: Iterable<number>, n: number) {
       stack.push(level - 1);
       stack.push(level - 1);
     } else {
-      writer(0);
+      length = writer(0);
       currIndex += leafCount;
     }
   }
@@ -101,22 +100,17 @@ export function oneOfToIndex(
   noOfClass: number
 ): Iterable<number>[] {
   const iters: Iterable<number>[] = [];
-  for (let k = 0; k < noOfClass - 1; k++) {
+  for (let k = 0; k < noOfClass; k++) {
     iters.push({
       *[Symbol.iterator]() {
         let index = 0;
-        let curr = 0;
+        let curr = -1;
         for (const n of iter) {
-          if (n >= k) {
-            const b = n > k ? 1 : 0;
-            if (b !== curr) {
-              yield index;
-              curr = b;
-            }
-            index++;
-          }
+          if (n === k && n !== curr) yield index;
+          curr = n;
+          index++;
         }
-      },
+      }
     });
   }
   return iters;
@@ -147,20 +141,13 @@ export function indexToOneOf(
   n: number,
   ...decodedBitmasks: Iterable<number>[]
 ) {
-  const iters: Iterable<number>[] = decodedBitmasks.map(b => indexToBit(n, b));
-  iters.push(alwaysZero());
-
   return {
     *[Symbol.iterator]() {
-      const _iters = iters.map(iter => iter[Symbol.iterator]());
-      while (true) {
-        for (let k = 0; k < iters.length; k++) {
-          const next = _iters[k].next();
-          if (next.done) return;
-          if (!next.value) {
-            yield k;
-            break;
-          }
+      let index = 0;
+      for (const [curr, until] of oneOfLoop(n, decodedBitmasks)) {
+        while (index < until) {
+          yield curr;
+          index++;
         }
       }
     },
@@ -318,28 +305,22 @@ export function forwardMapOneOf(
   n: number,
   ...decodedBitmasks: Iterable<number>[]
 ) {
-  const iters: Iterable<number>[] = decodedBitmasks.map(b => indexToBit(n, b));
-  iters.push(alwaysZero());
-
   const forwardMaps: Int32Indexes[] = [];
-  for (let kn = 0; kn < iters.length; kn++) {
+  for (let k = 0; k < decodedBitmasks.length; k++) {
     forwardMaps.push({
       *[Symbol.iterator]() {
-        const _iters = iters
-          .slice(0, kn + 1)
-          .map(iter => iter[Symbol.iterator]());
+        let ones = 0;
         let index = 0;
-        while (true) {
-          for (let k = 0; k <= kn; k++) {
-            const next = _iters[k].next();
-            if (next.done) return;
-            if (k < kn) {
-              if (!next.value) {
-                yield -1;
-                break;
-              }
-            } else {
-              yield next.value ? -1 : index++;
+        for (const [curr, until] of oneOfLoop(n, decodedBitmasks)) {
+          if (curr === k) {
+            while (index < until) {
+              yield ones++;
+              index++;
+            }
+          } else {
+            while (index < until) {
+              yield -1;
+              index++;
             }
           }
         }
@@ -354,28 +335,17 @@ export function backwardMapOneOf(
   n: number,
   ...decodedBitmasks: Iterable<number>[]
 ) {
-  const iters: Iterable<number>[] = decodedBitmasks.map(b => indexToBit(n, b));
-  iters.push(alwaysZero());
-
   const backwardMaps: Int32Indexes[] = [];
-  for (let kn = 0; kn < iters.length; kn++) {
+  for (let k = 0; k < decodedBitmasks.length; k++) {
     backwardMaps.push({
       *[Symbol.iterator]() {
-        const _iters = iters
-          .slice(0, kn + 1)
-          .map(iter => iter[Symbol.iterator]());
         let index = 0;
-        while (true) {
-          for (let k = 0; k <= kn; k++) {
-            const next = _iters[k].next();
-            if (next.done) return;
-            if (k < kn) {
-              if (!next.value) break;
-            } else if (!next.value) {
-              yield index;
-            }
+        for (const [curr, until] of oneOfLoop(n, decodedBitmasks)) {
+          if (curr === k) {
+            while (index < until) yield index++;
+          } else {
+            index = until;
           }
-          index++;
         }
       },
       asInt32Array: asInt32Array(n)
@@ -390,12 +360,18 @@ export function forwardMapSingleOneOf(
 ) {
   if (index < 0) return [0, -1];
   const kMax = decodedBitmasks.length;
-  for (let k = 0; k < kMax; k++) {
-    const mapped = forwardMapSingleIndex(decodedBitmasks[k], index, 0);
-    if (mapped >= 0) return [k, mapped];
-    index = forwardMapSingleIndex(decodedBitmasks[k], index, 1);
+  const zeros = new Uint32Array(kMax);
+  const ones = new Uint32Array(kMax);
+  let lastCurr = -1;
+  for (const [curr, until] of oneOfLoop(256, decodedBitmasks)) {
+    lastCurr = curr;
+    for (let k = 0; k < kMax; k++) {
+      if (curr === k) ones[k] = until - zeros[k];
+      else zeros[k] = until - ones[k];
+    }
+    if (index < until) break;
   }
-  return [kMax, index];
+  return [lastCurr, index - zeros[lastCurr]];
 }
 
 export function backwardMapSingleOneOf(
@@ -403,13 +379,121 @@ export function backwardMapSingleOneOf(
   index: number,
   ...decodedBitmasks: Iterable<number>[]
 ) {
-  if (group < decodedBitmasks.length) {
-    index = backwardMapSingleIndex(decodedBitmasks[group], index, 0);
+  let zeros = 0;
+  let ones = 0;
+  let isCurr = false;
+  for (const [curr, until] of oneOfLoop(Infinity, decodedBitmasks)) {
+    isCurr = curr === group;
+    if (isCurr) {
+      ones = until - zeros;
+      if (index < ones) break;
+    } else {
+      zeros = until - ones;
+    }
   }
-  for (let k = group - 1; k >= 0; k--) {
-    index = backwardMapSingleIndex(decodedBitmasks[k], index, 1);
+  return isCurr ? index + zeros : -1;
+}
+
+export function diffIndexes(curr: Iterable<number>, next: Iterable<number>) {
+  return {
+    *[Symbol.iterator]() {
+      const currIter = curr[Symbol.iterator]();
+      let currIndex = currIter.next();
+      for (const nextIndex of next) {
+        while (!currIndex.done && currIndex.value < nextIndex) {
+          yield currIndex.value;
+          currIndex = currIter.next();
+        }
+        if (currIndex.done || currIndex.value > nextIndex) yield nextIndex;
+        else currIndex = currIter.next();
+      }
+    }
+  };
+}
+
+/*
+export function encodeBitmaskFromDiff(
+  diff: Iterable<number>,
+  curr: Uint8Array,
+  n: number
+) {
+  const diffIter = diff[Symbol.iterator]();
+  const currReader = readBit(curr);
+  const output = new Uint8Array(2 * n);
+  const depth = Math.ceil(Math.log2(n));
+  const writer = writeBit(output);
+  const stack = new Stack(new Uint8Array(64));
+  stack.push(depth);
+
+  let length = 0;
+  let currIndex = 0;
+  let next = diffIter.next();
+  if (next.done) return new Uint8Array(1);
+
+  while (!stack.isEmpty) {
+    if (currIndex >= n) break;
+
+    const level = stack.pop();
+    const leafCount = 1 << level;
+
+    if (next.done) {
+      currIndex += leafCount;
+      continue;
+    }
+
+    if (level === 0) {
+      if (next.value === currIndex) {
+        length = writer(1);
+        next = diffIter.next();
+      } else {
+        length = writer(0);
+      }
+      currIndex++;
+    } else if (currIndex + leafCount > next.value) {
+      length = writer(1);
+      stack.push(level - 1);
+      stack.push(level - 1);
+    } else {
+      length = writer(0);
+      currIndex += leafCount;
+    }
   }
-  return index;
+
+  return output.slice(0, Math.ceil(length / 8));
+}
+*/
+
+function* oneOfLoop(n: number, decodedBitmasks: Iterable<number>[]) {
+  const iters = decodedBitmasks.map(iter => iter[Symbol.iterator]());
+
+  const nextIndexes = iters.map(iter => {
+    const next = iter.next();
+    return next.done ? n : next.value;
+  });
+
+  let curr = nextIndexes.findIndex(i => i === 0);
+  const next = iters[curr].next();
+  nextIndexes[curr] = next.done ? n : next.value;
+
+  while (true) {
+    let minK = -1;
+    let minIndex = n;
+    nextIndexes.forEach((i, k) => {
+      if (i < minIndex) {
+        minK = k;
+        minIndex = i;
+      }
+    });
+
+    if (minIndex === n) break;
+    const next = iters[minK].next();
+    nextIndexes[minK] = next.done ? n : next.value;
+
+    yield [curr, minIndex];
+    curr = minK;
+  }
+
+  yield [curr, n];
 }
 
 function readBit(arr: Uint8Array) {
@@ -446,7 +530,7 @@ function writeBit(arr: Uint8Array) {
   };
 }
 
-function asUint8Array(n: number) {
+export function asUint8Array(n: number) {
   return function (this: Iterable<number>) {
     const output = new Uint8Array(n);
     let k = 0;
@@ -458,7 +542,7 @@ function asUint8Array(n: number) {
   };
 }
 
-function asInt32Array(n: number) {
+export function asInt32Array(n: number) {
   return function (this: Iterable<number>) {
     const output = new Int32Array(n);
     let k = 0;
@@ -468,8 +552,4 @@ function asInt32Array(n: number) {
     }
     return output.slice(0, k);
   };
-}
-
-function* alwaysZero() {
-  while (true) yield 0;
 }
