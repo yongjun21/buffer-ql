@@ -686,17 +686,15 @@ export class BranchedReader<T extends boolean> extends Reader<T> {
       return new BranchedReader(branches, 0, EMPTY_UINT8, currentIndex);
     }
 
-    const bitmasks: Iterable<number>[] = [];
-    for (let i = 0; i < children.length - 1; i++) {
+    const bitmasks: Iterable<number>[] = children.map((_, i) => {
       const offset = currentOffset + i * size;
       const bitmaskOffset = _dataView.getInt32(offset + 4, true);
       const bitmaskLength = _dataView.getInt32(offset + 8, true);
-      const bitmask = decodeBitmask(
+      return decodeBitmask(
         new Uint8Array(_dataView.buffer, bitmaskOffset, bitmaskLength),
         currentLength
       );
-      bitmasks.push(bitmask);
-    }
+    });
 
     if (root.singleValue()) {
       const _currentIndex = currentIndex as number;

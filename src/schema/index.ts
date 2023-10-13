@@ -66,7 +66,7 @@ const SCHEMA_COMPOUND_TYPE_SIZE: Record<string, number> = {
   Optional: 12,
   // offset to branch0 + (offset + length) to bitmask0 +
   // offset to branch1 + (offset + length) to bitmask1 + ...
-  // offset to branchN
+  // offset to branchN + (offset + length) to bitmaskN
   OneOf: 12,
   // offset to value + at index
   Ref: 8,

@@ -214,7 +214,7 @@ export function encodeWithSchema(data: any, schema: Schema, rootType: string) {
 
       if (this.isOneOf()) {
         const { size } = currentType as SchemaCompoundType<'OneOf'>;
-        return offset + size * branches.length - 8;
+        return offset + size * branches.length;
       }
 
       throw new TypeError(`Allocation not implemented for ${currentType.type}`);
@@ -293,15 +293,13 @@ export function encodeWithSchema(data: any, schema: Schema, rootType: string) {
         const { size } = currentType as SchemaCompoundType<'OneOf'>;
         branches.forEach((branch, i) => {
           const offset = currentOffset + i * size;
+          const [bitmaskOffset, bitmaskLength] = bitmaskWriter.write(
+            bitmasks[i],
+            currentSource.length
+          );
           dataView.setUint32(offset, branch.currentOffset, true);
-          if (i < branches.length - 1) {
-            const [bitmaskOffset, bitmaskLength] = bitmaskWriter.write(
-              bitmasks[i],
-              currentSource.length
-            );
-            dataView.setUint32(offset + 4, bitmaskOffset, true);
-            dataView.setUint32(offset + 8, bitmaskLength, true);
-          }
+          dataView.setUint32(offset + 4, bitmaskOffset, true);
+          dataView.setUint32(offset + 8, bitmaskLength, true);
         });
       } else if (this.isRef()) {
         const { size } = currentType as SchemaCompoundType<'Ref'>;
