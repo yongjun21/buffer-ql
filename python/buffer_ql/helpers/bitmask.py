@@ -323,18 +323,37 @@ def backward_map_single_one_of(group, index, *decoded_bitmasks):
 def diff_indexes(curr_indexes, next_indexes):
     class Iter:
         def __iter__(self):
-            curr_iter = iter(curr_indexes)
-            curr_index = next(curr_iter, None)
+            next_iter = iter(next_indexes)
+            next_index = next(next_iter, None)
 
-            for next_index in next_indexes:
-                while curr_index is not None and curr_index < next_index:
-                    yield curr_index
-                    curr_index = next(curr_iter, None)
-
-                if curr_index is None or curr_index > next_index:
+            for curr_index in curr_indexes:
+                while next_index is not None and next_index < curr_index:
                     yield next_index
+                    next_index = next(next_iter, None)
+
+                if next_index is None or next_index > curr_index:
+                    yield curr_index
                 else:
-                    curr_index = next(curr_iter, None)
+                    next_index = next(next_iter, None)
+
+    return Iter()
+
+
+def apply_index_diff(curr_indexes, diff_indexes):
+    class Iter:
+        def __iter__(self):
+            diff_iter = iter(diff_indexes)
+            diff_index = next(diff_iter, None)
+
+            for curr_index in curr_indexes:
+                while diff_index is not None and diff_index < curr_index:
+                    yield diff_index
+                    diff_index = next(diff_iter, None)
+
+                if diff_index is None or diff_index > curr_index:
+                    yield curr_index
+                else:
+                    diff_index = next(diff_iter, None)
 
     return Iter()
 

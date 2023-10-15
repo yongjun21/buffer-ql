@@ -397,71 +397,40 @@ export function backwardMapSingleOneOf(
 export function diffIndexes(curr: Iterable<number>, next: Iterable<number>) {
   return {
     *[Symbol.iterator]() {
-      const currIter = curr[Symbol.iterator]();
-      let currIndex = currIter.next();
-      for (const nextIndex of next) {
-        while (!currIndex.done && currIndex.value < nextIndex) {
-          yield currIndex.value;
-          currIndex = currIter.next();
+      const nextIter = next[Symbol.iterator]();
+      let nextIndex = nextIter.next();
+      for (const currIndex of curr) {
+        while (!nextIndex.done && nextIndex.value < currIndex) {
+          yield nextIndex.value;
+          nextIndex = nextIter.next();
         }
-        if (currIndex.done || currIndex.value > nextIndex) yield nextIndex;
-        else currIndex = currIter.next();
+        if (nextIndex.done || nextIndex.value > currIndex) yield currIndex;
+        else nextIndex = nextIter.next();
+      }
+      while (!nextIndex.done) {
+        yield nextIndex.value;
+        nextIndex = nextIter.next();
       }
     }
   };
 }
 
-/*
-export function encodeBitmaskFromDiff(
-  diff: Iterable<number>,
-  curr: Uint8Array,
-  n: number
-) {
-  const diffIter = diff[Symbol.iterator]();
-  const currReader = readBit(curr);
-  const output = new Uint8Array(2 * n);
-  const depth = Math.ceil(Math.log2(n));
-  const writer = writeBit(output);
-  const stack = new Stack(new Uint8Array(64));
-  stack.push(depth);
-
-  let length = 0;
-  let currIndex = 0;
-  let next = diffIter.next();
-  if (next.done) return new Uint8Array(1);
-
-  while (!stack.isEmpty) {
-    if (currIndex >= n) break;
-
-    const level = stack.pop();
-    const leafCount = 1 << level;
-
-    if (next.done) {
-      currIndex += leafCount;
-      continue;
-    }
-
-    if (level === 0) {
-      if (next.value === currIndex) {
-        length = writer(1);
-        next = diffIter.next();
-      } else {
-        length = writer(0);
+export function applyIndexDiff(curr: Iterable<number>, diff: Iterable<number>) {
+  return {
+    *[Symbol.iterator]() {
+      const diffIter = diff[Symbol.iterator]();
+      let diffIndex = diffIter.next();
+      for (const currIndex of curr) {
+        while (!diffIndex.done && diffIndex.value < currIndex) {
+          yield diffIndex.value;
+          diffIndex = diffIter.next();
+        }
+        if (diffIndex.done || diffIndex.value > currIndex) yield currIndex;
+        else diffIndex = diffIter.next();
       }
-      currIndex++;
-    } else if (currIndex + leafCount > next.value) {
-      length = writer(1);
-      stack.push(level - 1);
-      stack.push(level - 1);
-    } else {
-      length = writer(0);
-      currIndex += leafCount;
     }
-  }
-
-  return output.slice(0, Math.ceil(length / 8));
+  };
 }
-*/
 
 function* oneOfLoop(n: number, decodedBitmasks: Iterable<number>[]) {
   const iters = decodedBitmasks.map(iter => iter[Symbol.iterator]());
