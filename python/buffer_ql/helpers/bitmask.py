@@ -1,3 +1,5 @@
+import heapq
+
 def decode_bitmask(encoded, n):
     class Iter:        
         def __iter__(self):
@@ -361,28 +363,27 @@ def apply_index_diff(curr_indexes, diff_indexes):
 def one_of_loop(n, decoded_bitmasks):
     iters = [iter(decoded_bitmask) for decoded_bitmask in decoded_bitmasks]
 
-    next_indexes = [next(iter, n) for iter in iters]
+    min_heap = []
+    for k, iterator in enumerate(iters):
+        i = next(iterator, n)
+        min_heap.append((i, k))
+    heapq.heapify(min_heap)
 
-    curr = next_indexes.index(0)
-    next_indexes[curr] = next(iters[curr], n)
+    _, curr = heapq.heappop(min_heap)
+    next_index = next(iters[curr], n)
+    heapq.heappush(min_heap, (next_index, curr))
 
     while True:
-        min_k = -1
-        min_index = n
-        
-        for k, i in enumerate(next_indexes):
-            if i < min_index:
-                min_k = k
-                min_index = i
-
+        min_index, min_k = heapq.heappop(min_heap)
         if min_index == n:
             break
 
-        next_indexes[min_k] = next(iters[min_k], n)
+        next_index = next(iters[min_k], n)
+        heapq.heappush(min_heap, (next_index, min_k))
 
         yield (curr, min_index)
         curr = min_k
-
+       
     yield (curr, n)
 
 

@@ -1,6 +1,6 @@
 /* eslint-disable no-labels */
 
-import { Stack } from './common.js';
+import { MinHeap, Stack } from './common.js';
 
 type Int32Indexes = ReturnType<typeof decodeBitmask>;
 
@@ -435,30 +435,24 @@ export function applyIndexDiff(curr: Iterable<number>, diff: Iterable<number>) {
 function* oneOfLoop(n: number, decodedBitmasks: Iterable<number>[]) {
   const iters = decodedBitmasks.map(iter => iter[Symbol.iterator]());
 
-  const nextIndexes = iters.map(iter => {
+  const heap = new MinHeap<[number, number]>((a, b) => a[0] - b[0]);
+  iters.forEach((iter, k) => {
     const next = iter.next();
-    return next.done ? n : next.value;
+    heap.push([next.done ? n : next.value, k]);
   });
 
-  let curr = nextIndexes.findIndex(i => i === 0);
+  let [_, curr] = heap.pop()!;
   const next = iters[curr].next();
-  nextIndexes[curr] = next.done ? n : next.value;
+  heap.push([next.done ? n : next.value, curr]);
 
   while (true) {
-    let minK = -1;
-    let minIndex = n;
-    nextIndexes.forEach((i, k) => {
-      if (i < minIndex) {
-        minK = k;
-        minIndex = i;
-      }
-    });
-
+    const [minIndex, minK] = heap.pop()!;
     if (minIndex === n) break;
-    const next = iters[minK].next();
-    nextIndexes[minK] = next.done ? n : next.value;
 
-    yield [curr, minIndex];
+    const next = iters[minK].next();
+    heap.push([next.done ? n : next.value, minK]);
+
+    yield [minK, minIndex];
     curr = minK;
   }
 
