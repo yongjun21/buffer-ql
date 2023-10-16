@@ -15,7 +15,6 @@ import {
   forwardMapSingleOneOf,
   backwardMapSingleOneOf,
   diffIndexes,
-  applyIndexDiff,
 } from '../dist/index.js';
 
 testBitmask();
@@ -64,7 +63,9 @@ function testBitmask() {
   
   const test3 = [1, 2, 3, 4, 5, 6, 7, 8];
   const diff = diffIndexes(test, test3);
+  const diffApplied = diffIndexes(test, diff);
+  const diffUnapplied = diffIndexes(test3, diff);
   console.log([...diff]);
-  const diffApplied = applyIndexDiff(test, diff);
   console.log([...diffApplied]);
+  console.log([...diffUnapplied]);
 }

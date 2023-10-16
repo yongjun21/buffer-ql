@@ -338,24 +338,9 @@ def diff_indexes(curr_indexes, next_indexes):
                 else:
                     next_index = next(next_iter, None)
 
-    return Iter()
-
-
-def apply_index_diff(curr_indexes, diff_indexes):
-    class Iter:
-        def __iter__(self):
-            diff_iter = iter(diff_indexes)
-            diff_index = next(diff_iter, None)
-
-            for curr_index in curr_indexes:
-                while diff_index is not None and diff_index < curr_index:
-                    yield diff_index
-                    diff_index = next(diff_iter, None)
-
-                if diff_index is None or diff_index > curr_index:
-                    yield curr_index
-                else:
-                    diff_index = next(diff_iter, None)
+            while next_index is not None:
+                yield next_index
+                next_index = next(next_iter, None)
 
     return Iter()
 

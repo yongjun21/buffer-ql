@@ -415,23 +415,6 @@ export function diffIndexes(curr: Iterable<number>, next: Iterable<number>) {
   };
 }
 
-export function applyIndexDiff(curr: Iterable<number>, diff: Iterable<number>) {
-  return {
-    *[Symbol.iterator]() {
-      const diffIter = diff[Symbol.iterator]();
-      let diffIndex = diffIter.next();
-      for (const currIndex of curr) {
-        while (!diffIndex.done && diffIndex.value < currIndex) {
-          yield diffIndex.value;
-          diffIndex = diffIter.next();
-        }
-        if (diffIndex.done || diffIndex.value > currIndex) yield currIndex;
-        else diffIndex = diffIter.next();
-      }
-    }
-  };
-}
-
 function* oneOfLoop(n: number, decodedBitmasks: Iterable<number>[]) {
   const iters = decodedBitmasks.map(iter => iter[Symbol.iterator]());
 

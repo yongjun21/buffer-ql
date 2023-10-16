@@ -15,7 +15,6 @@ from buffer_ql.helpers.bitmask import (
     forward_map_single_one_of,
     backward_map_single_one_of,
     diff_indexes,
-    apply_index_diff,
 )
 
 def test_bitmask():
@@ -68,10 +67,12 @@ def test_bitmask():
     ])
 
     test3 = [1, 2, 3, 4, 5, 6, 7, 8]
-    diff = list(diff_indexes(test, test3))
-    print(list(diff_indexes(test, test3)))
-    diff_applied = apply_index_diff(test, diff)
+    diff = diff_indexes(test, test3)
+    diff_applied = diff_indexes(test, diff)
+    diff_unapplied = diff_indexes(test3, diff)
+    print(list(diff))
     print(list(diff_applied))
+    print(list(diff_unapplied))
 
 
 test_bitmask()
