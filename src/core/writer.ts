@@ -2,7 +2,8 @@ import {
   bitToIndex,
   oneOfToIndex,
   backwardMapIndexes,
-  backwardMapOneOf
+  backwardMapOneOf,
+  splitOneOfIndexes
 } from '../helpers/bitmask.js';
 import { createStringWriter, createBitmaskWriter } from '../helpers/io.js';
 
@@ -149,7 +150,6 @@ export function encodeWithSchema(data: any, schema: Schema, rootType: string) {
         nextBranches.push(new Writer(nextType, nextSource));
       } else if (this.isOneOf()) {
         const { children } = currentType as SchemaCompoundType<'OneOf'>;
-        const currentLength = currentSource.length;
 
         const discriminator = currentSource.map(value => {
           for (let k = 0; k < children.length; k++) {
@@ -161,10 +161,10 @@ export function encodeWithSchema(data: any, schema: Schema, rootType: string) {
           );
         });
 
-        const bitmasks = oneOfToIndex(discriminator, children.length);
-        this.bitmasks.push(...bitmasks);
+        const oneOfIndex = oneOfToIndex(discriminator);
+        this.bitmasks.push(...splitOneOfIndexes(oneOfIndex, children.length));
 
-        const backwardIndexes = backwardMapOneOf(currentLength, ...bitmasks);
+        const backwardIndexes = backwardMapOneOf(oneOfIndex, children.length);
         backwardIndexes.forEach((indexes, k) => {
           const nextType = children[k];
           const nextSource: any[] = [];

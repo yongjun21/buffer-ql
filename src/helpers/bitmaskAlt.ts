@@ -1,13 +1,8 @@
 import {
-  asUint8Array,
-  asInt32Array,
   indexToBit,
-  decodeBitmask,
   forwardMapSingleIndex,
   backwardMapSingleIndex
 } from './bitmask.js';
-
-type Int32Indexes = ReturnType<typeof decodeBitmask>;
 
 export function oneOfToIndexAlt(
   iter: Iterable<number>,
@@ -55,8 +50,7 @@ export function indexToOneOfAlt(
           }
         }
       }
-    },
-    asUint8Array: asUint8Array(n)
+    }
   };
 }
 
@@ -67,7 +61,7 @@ export function forwardMapOneOfAlt(
   const iters: Iterable<number>[] = decodedBitmasks.map(b => indexToBit(n, b));
   iters.push(alwaysZero());
 
-  const forwardMaps: Int32Indexes[] = [];
+  const forwardMaps: Iterable<number>[] = [];
   for (let kn = 0; kn < iters.length; kn++) {
     forwardMaps.push({
       *[Symbol.iterator]() {
@@ -89,8 +83,7 @@ export function forwardMapOneOfAlt(
             }
           }
         }
-      },
-      asInt32Array: asInt32Array(n)
+      }
     });
   }
   return forwardMaps;
@@ -103,7 +96,7 @@ export function backwardMapOneOfAlt(
   const iters: Iterable<number>[] = decodedBitmasks.map(b => indexToBit(n, b));
   iters.push(alwaysZero());
 
-  const backwardMaps: Int32Indexes[] = [];
+  const backwardMaps: Iterable<number>[] = [];
   for (let kn = 0; kn < iters.length; kn++) {
     backwardMaps.push({
       *[Symbol.iterator]() {
@@ -123,8 +116,7 @@ export function backwardMapOneOfAlt(
           }
           index++;
         }
-      },
-      asInt32Array: asInt32Array(n)
+      }
     });
   }
   return backwardMaps;
@@ -137,9 +129,9 @@ export function forwardMapSingleOneOfAlt(
   if (index < 0) return [0, -1];
   const kMax = decodedBitmasks.length;
   for (let k = 0; k < kMax; k++) {
-    const mapped = forwardMapSingleIndex(decodedBitmasks[k], index, 0);
+    const mapped = forwardMapSingleIndex(index, decodedBitmasks[k], 0);
     if (mapped >= 0) return [k, mapped];
-    index = forwardMapSingleIndex(decodedBitmasks[k], index, 1);
+    index = forwardMapSingleIndex(index, decodedBitmasks[k], 1);
   }
   return [kMax, index];
 }
@@ -150,10 +142,10 @@ export function backwardMapSingleOneOfAlt(
   ...decodedBitmasks: Iterable<number>[]
 ) {
   if (group < decodedBitmasks.length) {
-    index = backwardMapSingleIndex(decodedBitmasks[group], index, 0);
+    index = backwardMapSingleIndex(index, decodedBitmasks[group], 0);
   }
   for (let k = group - 1; k >= 0; k--) {
-    index = backwardMapSingleIndex(decodedBitmasks[k], index, 1);
+    index = backwardMapSingleIndex(index, decodedBitmasks[k], 1);
   }
   return index;
 }

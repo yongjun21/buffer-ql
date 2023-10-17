@@ -7,7 +7,8 @@ import {
   forwardMapSingleIndex,
   indexToOneOf,
   forwardMapOneOf,
-  forwardMapSingleOneOf
+  forwardMapSingleOneOf,
+  mergeOneOfIndexes
 } from '../helpers/bitmask.js';
 import { readString } from '../helpers/io.js';
 
@@ -24,7 +25,9 @@ import type { TypedArrayConstructor } from '../types/common.js';
 
 export type Single = true;
 export type Multiple = false;
-export type IndexType<T extends boolean> = T extends Single ? number : Int32Array;
+export type IndexType<T extends boolean> = T extends Single
+  ? number
+  : Int32Array;
 export type ValueReturnType<U, T extends boolean> = T extends Single
   ? U
   : LazyArray<U>;
@@ -338,13 +341,13 @@ export class Reader<T extends boolean = Single> {
         currentLength
       );
       const nextIndex = this.singleValue()
-        ? forwardMapSingleIndex(bitmask, this.currentIndex)
+        ? forwardMapSingleIndex(this.currentIndex, bitmask)
         : chainForwardIndexes(
             currentIndex as Int32Array,
-            forwardMapIndexes(
+            Int32Array.from(forwardMapIndexes(
               getMaxIndex(currentIndex as Int32Array, currentLength) + 1,
               bitmask
-            ).asInt32Array()
+            ))
           );
 
       return this._nextReader(nextType, nextOffset, nextIndex, currentLength);
@@ -695,13 +698,15 @@ export class BranchedReader<T extends boolean> extends Reader<T> {
         currentLength
       );
     });
+    const oneOfIndex = mergeOneOfIndexes(currentLength, ...bitmasks);
 
     if (root.singleValue()) {
       const _currentIndex = currentIndex as number;
 
       const [discriminator, branchNextIndex] = forwardMapSingleOneOf(
         _currentIndex,
-        ...bitmasks
+        oneOfIndex,
+        children.length
       );
 
       const branches = children.map((nextType, i) => {
@@ -718,16 +723,15 @@ export class BranchedReader<T extends boolean> extends Reader<T> {
       return new BranchedReader(branches, 0, discriminator, _currentIndex);
     } else {
       const _currentIndex = currentIndex as Int32Array;
-      const maxIndex = getMaxIndex(_currentIndex, currentLength);
 
-      const discriminator = indexToOneOf(
-        maxIndex + 1,
-        ...bitmasks
-      ).asUint8Array();
-      const forwardMaps = forwardMapOneOf(maxIndex + 1, ...bitmasks);
+      const discriminator = Uint8Array.from(indexToOneOf(oneOfIndex));
+      const forwardMaps = forwardMapOneOf(
+        oneOfIndex,
+        children.length
+      );
 
       const branches = children.map((nextType, i) => {
-        const nextIndex = forwardMaps[i].asInt32Array();
+        const nextIndex = Int32Array.from(forwardMaps[i]);
         const offset = currentOffset + i * size;
         const nextOffset = _dataView.getInt32(offset, true);
         return _root._nextReader(
@@ -839,7 +843,6 @@ function createRefCache() {
 function chainForwardIndexes(a: Int32Array, b: Int32Array) {
   return a.map(i => (i < 0 ? -1 : b[i]));
 }
-
 
 function getMaxIndex(indexes: Int32Array, length: number) {
   let max = -1;
