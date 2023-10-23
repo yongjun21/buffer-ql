@@ -2,7 +2,10 @@
 
 import { Stack } from './common.js';
 
-export function decodeBitmask(encoded: Uint8Array, maxIndex: number) {
+export function decodeBitmask(
+  encoded: Uint8Array,
+  maxIndex: number
+): Iterable<number> {
   return {
     *[Symbol.iterator]() {
       const n = maxIndex + 1;
@@ -76,7 +79,7 @@ export function decodeOneOf(
   encoded: Uint8Array,
   maxIndex: number,
   noOfClass: number
-) {
+): Iterable<number> {
   const n = maxIndex * noOfClass + noOfClass - 1;
   return {
     [Symbol.iterator]() {
@@ -439,6 +442,24 @@ export function diffIndexes(
         yield nextIndex.value;
         nextIndex = nextIter.next();
       }
+    }
+  };
+}
+
+export function diffOneOfIndexes(
+  curr: Iterable<number>,
+  next: Iterable<number>,
+  noOfClass: number
+): Iterable<number> {
+  return {
+    [Symbol.iterator]() {
+      return restructureOneOfIndexes(
+        diffIndexes(
+          normalizeOneOfIndexes(curr, noOfClass),
+          normalizeOneOfIndexes(next, noOfClass)
+        ),
+        noOfClass
+      );
     }
   };
 }

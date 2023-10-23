@@ -367,6 +367,19 @@ def diff_indexes(curr_indexes, next_indexes):
     return Iter()
 
 
+def diff_one_of_indexes(curr_one_of, next_one_of, no_of_class):
+    class Iter:
+        def __iter__(self):
+            return restructure_one_of_indexes(
+                diff_indexes(
+                    normalize_one_of_indexes(curr_one_of, no_of_class),
+                    normalize_one_of_indexes(next_one_of, no_of_class)
+                ),
+                no_of_class
+            )
+    return Iter()
+
+
 def read_bit(arr):
     index = 0
     position = 0
