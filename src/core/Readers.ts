@@ -8,7 +8,7 @@ import {
   forwardMapSingleIndex,
   indexToOneOf,
   forwardMapOneOf,
-  forwardMapSingleOneOf,
+  forwardMapSingleOneOf
 } from '../helpers/bitmask.js';
 import { readString } from '../helpers/io.js';
 
@@ -688,18 +688,18 @@ export class BranchedReader<T extends boolean> extends Reader<T> {
 
     const bitmaskOffset = _dataView.getInt32(currentOffset, true);
     const bitmaskLength = _dataView.getInt32(currentOffset + 4, true);
-    const oneOfIndexes = decodeOneOf(
+    const oneOfIndex = decodeOneOf(
       new Uint8Array(_dataView.buffer, bitmaskOffset, bitmaskLength),
       currentLength,
       children.length
-    )
+    );
 
     if (root.singleValue()) {
       const _currentIndex = currentIndex as number;
 
       const [discriminator, branchNextIndex] = forwardMapSingleOneOf(
         _currentIndex,
-        oneOfIndexes,
+        oneOfIndex,
         children.length
       );
 
@@ -718,11 +718,10 @@ export class BranchedReader<T extends boolean> extends Reader<T> {
     } else {
       const _currentIndex = currentIndex as Int32Array;
 
-      const discriminator = Uint8Array.from(indexToOneOf(oneOfIndexes));
-      const forwardMaps = forwardMapOneOf(
-        oneOfIndexes,
-        children.length
+      const discriminator = Uint8Array.from(
+        indexToOneOf(oneOfIndex, children.length)
       );
+      const forwardMaps = forwardMapOneOf(oneOfIndex, children.length);
 
       const branches = children.map((nextType, i) => {
         const nextIndex = Int32Array.from(forwardMaps[i]);

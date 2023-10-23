@@ -46,5 +46,4 @@ export {
   forwardMapSingleOneOf,
   backwardMapSingleOneOf,
   diffIndexes,
-  diffOneOfIndexes,
 } from './helpers/bitmask.js';

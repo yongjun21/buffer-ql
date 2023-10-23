@@ -81,11 +81,7 @@ export function decodeOneOf(
   noOfClass: number
 ): Iterable<number> {
   const n = maxIndex * noOfClass + noOfClass - 1;
-  return {
-    [Symbol.iterator]() {
-      return restructureOneOfIndexes(decodeBitmask(encoded, n), noOfClass);
-    }
-  };
+  return decodeBitmask(encoded, n);
 }
 
 export function encodeOneOf(
@@ -94,26 +90,7 @@ export function encodeOneOf(
   noOfClass: number
 ) {
   const n = maxIndex * noOfClass + noOfClass - 1;
-  return encodeBitmask(normalizeOneOfIndexes(iter, noOfClass), n);
-}
-
-function* normalizeOneOfIndexes(iter: Iterable<number>, noOfClass: number) {
-  let curr = -1;
-  for (const i of iter) {
-    if (curr < 0) {
-      curr = i;
-      continue;
-    }
-    yield i * noOfClass + curr;
-    curr = -1;
-  }
-}
-
-function* restructureOneOfIndexes(iter: Iterable<number>, noOfClass: number) {
-  for (const i of iter) {
-    yield i % noOfClass;
-    yield Math.trunc(i / noOfClass);
-  }
+  return encodeBitmask(iter, n);
 }
 
 export function bitToIndex(iter: Iterable<any>): Iterable<number> {
@@ -133,20 +110,22 @@ export function bitToIndex(iter: Iterable<any>): Iterable<number> {
   };
 }
 
-export function oneOfToIndex(iter: Iterable<number>): Iterable<number> {
+export function oneOfToIndex(
+  iter: Iterable<number>,
+  noOfClass: number
+): Iterable<number> {
   return {
     *[Symbol.iterator]() {
       let index = 0;
       let curr = -1;
       for (const k of iter) {
         if (k !== curr) {
-          if (index > 0) yield index;
-          yield k;
+          if (index > 0) yield index * noOfClass + curr;
           curr = k;
         }
         index++;
       }
-      if (index > 0) yield index;
+      if (index > 0) yield index * noOfClass + curr;
     }
   };
 }
@@ -167,21 +146,20 @@ export function indexToBit(decodedBitmask: Iterable<number>): Iterable<number> {
   };
 }
 
-export function indexToOneOf(decodedOneOf: Iterable<number>): Iterable<number> {
+export function indexToOneOf(
+  decodedOneOf: Iterable<number>,
+  noOfClass: number
+): Iterable<number> {
   return {
     *[Symbol.iterator]() {
       let index = 0;
-      let curr = -1;
-      for (const i of decodedOneOf) {
-        if (curr < 0) {
-          curr = i;
-          continue;
-        }
+      for (const _i of decodedOneOf) {
+        const curr = _i % noOfClass;
+        const i = Math.trunc(_i / noOfClass);
         while (index < i) {
           yield curr;
           index++;
         }
-        curr = -1;
       }
     }
   };
@@ -321,12 +299,9 @@ export function forwardMapOneOf(
       *[Symbol.iterator]() {
         let ones = 0;
         let index = 0;
-        let curr = -1;
-        for (const i of decodedOneOf) {
-          if (curr < 0) {
-            curr = i;
-            continue;
-          }
+        for (const _i of decodedOneOf) {
+          const curr = _i % noOfClass;
+          const i = Math.trunc(_i / noOfClass);
           if (curr === k) {
             while (index < i) {
               yield ones++;
@@ -338,7 +313,6 @@ export function forwardMapOneOf(
               index++;
             }
           }
-          curr = -1;
         }
       }
     });
@@ -355,18 +329,14 @@ export function backwardMapOneOf(
     backwardMaps.push({
       *[Symbol.iterator]() {
         let index = 0;
-        let curr = -1;
-        for (const i of decodedOneOf) {
-          if (curr < 0) {
-            curr = i;
-            continue;
-          }
+        for (const _i of decodedOneOf) {
+          const curr = _i % noOfClass;
+          const i = Math.trunc(_i / noOfClass);
           if (curr === k) {
             while (index < i) yield index++;
           } else {
             index = i;
           }
-          curr = -1;
         }
       }
     });
@@ -383,41 +353,36 @@ export function forwardMapSingleOneOf(
   const zeros = new Uint32Array(noOfClass);
   const ones = new Uint32Array(noOfClass);
   let curr = -1;
-  for (const i of decodedOneOf) {
-    if (curr < 0) {
-      curr = i;
-      continue;
-    }
+  for (const _i of decodedOneOf) {
+    curr = _i % noOfClass;
+    const i = Math.trunc(_i / noOfClass);
     for (let k = 0; k < noOfClass; k++) {
       if (curr === k) ones[k] = i - zeros[k];
       else zeros[k] = i - ones[k];
     }
     if (index < i) break;
-    curr = -1;
   }
   return [curr, index - zeros[curr]];
 }
 
 export function backwardMapSingleOneOf(
   index: number,
+  group: number,
   decodedOneOf: Iterable<number>,
-  group: number
+  noOfClass: number
 ) {
   let zeros = 0;
   let ones = 0;
   let curr = -1;
-  for (const i of decodedOneOf) {
-    if (curr < 0) {
-      curr = i;
-      continue;
-    }
+  for (const _i of decodedOneOf) {
+    curr = _i % noOfClass;
+    const i = Math.trunc(_i / noOfClass);
     if (curr === group) {
       ones = i - zeros;
       if (index < ones) break;
     } else {
       zeros = i - ones;
     }
-    curr = -1;
   }
   return curr === group ? index + zeros : -1;
 }
@@ -442,24 +407,6 @@ export function diffIndexes(
         yield nextIndex.value;
         nextIndex = nextIter.next();
       }
-    }
-  };
-}
-
-export function diffOneOfIndexes(
-  curr: Iterable<number>,
-  next: Iterable<number>,
-  noOfClass: number
-): Iterable<number> {
-  return {
-    [Symbol.iterator]() {
-      return restructureOneOfIndexes(
-        diffIndexes(
-          normalizeOneOfIndexes(curr, noOfClass),
-          normalizeOneOfIndexes(next, noOfClass)
-        ),
-        noOfClass
-      );
     }
   };
 }

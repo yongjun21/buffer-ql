@@ -66,32 +66,12 @@ def encode_bitmask(iterable, max_index):
 
 def decode_one_of(encoded, max_index, no_of_class):
     n = max_index * no_of_class + no_of_class - 1
-
-    class Iter:
-        def __iter__(self):
-            return restructure_one_of_indexes(decode_bitmask(encoded, n), no_of_class)
-    return Iter()
+    return decode_bitmask(encoded, n)
 
 
 def encode_one_of(iterable, max_index, no_of_class):
     n = max_index * no_of_class + no_of_class - 1
-    return encode_bitmask(normalize_one_of_indexes(iterable, no_of_class), n)
-
-
-def normalize_one_of_indexes(iterable, no_of_class):
-    curr = -1
-    for i in iterable:
-        if curr < 0:
-            curr = i
-            continue
-        yield i * no_of_class + curr
-        curr = -1
-
-
-def restructure_one_of_indexes(iterable, no_of_class):
-    for i in iterable:
-        yield i % no_of_class
-        yield i // no_of_class
+    return encode_bitmask(iterable, n)
 
 
 def bit_to_index(iterable):
@@ -108,7 +88,7 @@ def bit_to_index(iterable):
     return Iter()
 
 
-def one_of_to_index(iterable):
+def one_of_to_index(iterable, no_of_class):
     class Iter:
         def __iter__(self):
             index = 0
@@ -116,12 +96,11 @@ def one_of_to_index(iterable):
             for k in iterable:
                 if k != curr:
                     if index > 0:
-                        yield index
-                    yield k
+                        yield index * no_of_class + curr
                     curr = k
                 index += 1
             if index > 0:
-                yield index
+                yield index * no_of_class + curr
     return Iter()
 
 
@@ -138,19 +117,16 @@ def index_to_bit(decoded_bitmask):
     return Iter()
 
 
-def index_to_one_of(decoded_one_of):
+def index_to_one_of(decoded_one_of, no_of_class):
     class Iter:
         def __iter__(self):
             index = 0
-            curr = -1
-            for i in decoded_one_of:
-                if curr < 0:
-                    curr = i
-                    continue
+            for _i in decoded_one_of:
+                curr = _i % no_of_class
+                i = _i // no_of_class
                 while index < i:
                     yield curr
                     index += 1
-                curr = -1
     return Iter()
 
 
@@ -261,11 +237,9 @@ def forward_map_one_of(decoded_one_of, no_of_class):
         def __iter__(self):
             ones = 0
             index = 0
-            curr = -1
-            for i in decoded_one_of:
-                if curr < 0:
-                    curr = i
-                    continue
+            for _i in decoded_one_of:
+                curr = _i % no_of_class
+                i = _i // no_of_class
                 if curr == self.k:
                     while index < i:
                         yield ones
@@ -275,7 +249,6 @@ def forward_map_one_of(decoded_one_of, no_of_class):
                     while index < i:
                         yield -1
                         index += 1
-                curr = -1
     return [Iter(k) for k in range(no_of_class)]
 
 
@@ -286,18 +259,15 @@ def backward_map_one_of(decoded_one_of, no_of_class):
 
         def __iter__(self):
             index = 0
-            curr = -1
-            for i in decoded_one_of:
-                if curr < 0:
-                    curr = i
-                    continue
+            for _i in decoded_one_of:
+                curr = _i % no_of_class
+                i = _i // no_of_class
                 if curr == self.k:
                     while index < i:
                         yield index
                         index += 1
                 else:
                     index = i
-                curr = -1
     return [Iter(k) for k in range(no_of_class)]
 
 
@@ -309,10 +279,9 @@ def forward_map_single_one_of(index, decoded_one_of, no_of_class):
     ones = [0] * no_of_class
     curr = -1
 
-    for i in decoded_one_of:
-        if curr < 0:
-            curr = i
-            continue
+    for _i in decoded_one_of:
+        curr = _i % no_of_class
+        i = _i // no_of_class
         for k in range(no_of_class):
             if curr == k:
                 ones[k] = i - zeros[k]
@@ -320,27 +289,23 @@ def forward_map_single_one_of(index, decoded_one_of, no_of_class):
                 zeros[k] = i - ones[k]
         if index < i:
             break
-        curr = -1
-
     return [curr, index - zeros[curr]]
 
 
-def backward_map_single_one_of(index, decoded_one_of, group):
+def backward_map_single_one_of(index, group, decoded_one_of, no_of_class):
     zeros = 0
     ones = 0
     curr = -1
 
-    for i in decoded_one_of:
-        if curr < 0:
-            curr = i
-            continue
+    for _i in decoded_one_of:
+        curr = _i % no_of_class
+        i = _i // no_of_class
         if curr == group:
             ones = i - zeros
             if index < ones:
                 break
         else:
             zeros = i - ones
-        curr = -1
     return index + zeros if curr == group else -1
 
 
@@ -364,19 +329,6 @@ def diff_indexes(curr_indexes, next_indexes):
                 yield next_index
                 next_index = next(next_iter, None)
 
-    return Iter()
-
-
-def diff_one_of_indexes(curr_one_of, next_one_of, no_of_class):
-    class Iter:
-        def __iter__(self):
-            return restructure_one_of_indexes(
-                diff_indexes(
-                    normalize_one_of_indexes(curr_one_of, no_of_class),
-                    normalize_one_of_indexes(next_one_of, no_of_class)
-                ),
-                no_of_class
-            )
     return Iter()
 
 

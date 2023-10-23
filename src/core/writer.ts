@@ -159,7 +159,7 @@ export function encodeWithSchema(data: any, schema: Schema, rootType: string) {
           );
         });
 
-        const oneOfIndex = oneOfToIndex(discriminator);
+        const oneOfIndex = oneOfToIndex(discriminator, children.length);
         this.bitmask = oneOfIndex;
 
         const backwardIndexes = backwardMapOneOf(oneOfIndex, children.length);
