@@ -40,7 +40,8 @@ export function createBitmaskWriter(startOffset = 0) {
   let offset = 0;
 
   return {
-    write(bitmask: Iterable<number>, n: number) {
+    write(bitmask: Iterable<number>, maxIndex: number, noOfClass = 1) {
+      const n = maxIndex * noOfClass + noOfClass - 1;
       const encoded = encodeBitmask(bitmask, n);
       const requiredLength = offset + encoded.length;
       if (buffer.length < requiredLength) {

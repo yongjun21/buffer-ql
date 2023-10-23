@@ -178,7 +178,7 @@ export function encodeWithSchema(data: any, schema: Schema, rootType: string) {
     }
 
     allocate(offset: number) {
-      const { currentType, currentSource, branches } = this;
+      const { currentType, currentSource } = this;
 
       if (this.isPrimitive()) {
         // align offset to multiples of size
@@ -211,8 +211,8 @@ export function encodeWithSchema(data: any, schema: Schema, rootType: string) {
       }
 
       if (this.isOneOf()) {
-        const { size } = currentType as SchemaCompoundType<'OneOf'>;
-        return offset + 8 + size * branches.length;
+        const { size, children } = currentType as SchemaCompoundType<'OneOf'>;
+        return offset + 8 + size * children.length;
       }
 
       throw new TypeError(`Allocation not implemented for ${currentType.type}`);
@@ -289,7 +289,8 @@ export function encodeWithSchema(data: any, schema: Schema, rootType: string) {
         const bitmaskWriter: ReturnType<typeof createBitmaskWriter> = args[0];
         const [bitmaskOffset, bitmaskLength] = bitmaskWriter.write(
           bitmask!,
-          currentSource.length
+          currentSource.length,
+          branches.length
         );
         dataView.setUint32(currentOffset, bitmaskOffset, true);
         dataView.setUint32(currentOffset + 4, bitmaskLength, true);

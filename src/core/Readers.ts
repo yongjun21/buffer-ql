@@ -725,7 +725,7 @@ export class BranchedReader<T extends boolean> extends Reader<T> {
 
       const branches = children.map((nextType, i) => {
         const nextIndex = Int32Array.from(forwardMaps[i]);
-        const offset = currentOffset + i * size;
+        const offset = currentOffset + 8 + i * size;
         const nextOffset = _dataView.getInt32(offset, true);
         return _root._nextReader(
           nextType,
