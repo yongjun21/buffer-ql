@@ -3,7 +3,6 @@ import {
   oneOfToIndex,
   backwardMapIndexes,
   backwardMapOneOf,
-  splitOneOfIndexes
 } from '../helpers/bitmask.js';
 import { createStringWriter, createBitmaskWriter } from '../helpers/io.js';
 
@@ -22,7 +21,7 @@ export function encodeWithSchema(data: any, schema: Schema, rootType: string) {
     currentType: Schema[string];
     currentSource: any[];
     currentOffset = -1;
-    bitmasks: Iterable<number>[] = [];
+    bitmask?: Iterable<number>;
     branches: any[] = [];
 
     constructor(type: string, source: any[]) {
@@ -134,17 +133,16 @@ export function encodeWithSchema(data: any, schema: Schema, rootType: string) {
         const {
           children: [nextType]
         } = currentType as SchemaCompoundType<'Optional'>;
-        const currentLength = currentSource.length;
 
         const discriminator = currentSource.map(value =>
           value == null ? 0 : 1
         );
 
         const bitmask = bitToIndex(discriminator);
-        this.bitmasks.push(bitmask);
+        this.bitmask = bitmask;
 
         const nextSource: any[] = [];
-        for (const i of backwardMapIndexes(currentLength, bitmask)) {
+        for (const i of backwardMapIndexes(bitmask)) {
           nextSource.push(currentSource[i]);
         }
         nextBranches.push(new Writer(nextType, nextSource));
@@ -162,7 +160,7 @@ export function encodeWithSchema(data: any, schema: Schema, rootType: string) {
         });
 
         const oneOfIndex = oneOfToIndex(discriminator);
-        this.bitmasks.push(...splitOneOfIndexes(oneOfIndex, children.length));
+        this.bitmask = oneOfIndex;
 
         const backwardIndexes = backwardMapOneOf(oneOfIndex, children.length);
         backwardIndexes.forEach((indexes, k) => {
@@ -209,12 +207,12 @@ export function encodeWithSchema(data: any, schema: Schema, rootType: string) {
 
       if (this.isOptional()) {
         const { size } = currentType as SchemaCompoundType<'Optional'>;
-        return offset + size;
+        return offset + 8 + size * 1;
       }
 
       if (this.isOneOf()) {
         const { size } = currentType as SchemaCompoundType<'OneOf'>;
-        return offset + size * branches.length;
+        return offset + 8 + size * branches.length;
       }
 
       throw new TypeError(`Allocation not implemented for ${currentType.type}`);
@@ -222,7 +220,7 @@ export function encodeWithSchema(data: any, schema: Schema, rootType: string) {
 
     write(dataView: DataView, ...args: any[]) {
       if (this.isNull()) return;
-      const { currentOffset, currentType, currentSource, branches, bitmasks } =
+      const { currentOffset, currentType, currentSource, branches, bitmask } =
         this;
 
       if (this.isPrimitive()) {
@@ -280,9 +278,8 @@ export function encodeWithSchema(data: any, schema: Schema, rootType: string) {
       } else if (this.isOptional()) {
         const bitmaskWriter: ReturnType<typeof createBitmaskWriter> = args[0];
         const [valWriter] = branches as [Writer];
-        const [bitmask] = bitmasks;
         const [bitmaskOffset, bitmaskLength] = bitmaskWriter.write(
-          bitmask,
+          bitmask!,
           currentSource.length
         );
         dataView.setUint32(currentOffset, bitmaskOffset, true);
@@ -290,16 +287,15 @@ export function encodeWithSchema(data: any, schema: Schema, rootType: string) {
         dataView.setUint32(currentOffset + 8, valWriter.currentOffset, true);
       } else if (this.isOneOf()) {
         const bitmaskWriter: ReturnType<typeof createBitmaskWriter> = args[0];
-        const { size } = currentType as SchemaCompoundType<'OneOf'>;
-        branches.forEach((branch, i) => {
-          const offset = currentOffset + i * size;
-          const [bitmaskOffset, bitmaskLength] = bitmaskWriter.write(
-            bitmasks[i],
-            currentSource.length
-          );
-          dataView.setUint32(offset, branch.currentOffset, true);
-          dataView.setUint32(offset + 4, bitmaskOffset, true);
-          dataView.setUint32(offset + 8, bitmaskLength, true);
+        const [bitmaskOffset, bitmaskLength] = bitmaskWriter.write(
+          bitmask!,
+          currentSource.length
+        );
+        dataView.setUint32(currentOffset, bitmaskOffset, true);
+        dataView.setUint32(currentOffset + 4, bitmaskLength, true);
+        (branches as Writer[]).forEach((valWriter, i) => {
+          const offset = currentOffset + 8 + i * 4;
+          dataView.setUint32(offset, valWriter.currentOffset, true);
         });
       } else if (this.isRef()) {
         const { size } = currentType as SchemaCompoundType<'Ref'>;

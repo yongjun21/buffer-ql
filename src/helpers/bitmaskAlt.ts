@@ -30,11 +30,8 @@ export function oneOfToIndexAlt(
   return iters;
 }
 
-export function indexToOneOfAlt(
-  n: number,
-  ...decodedBitmasks: Iterable<number>[]
-) {
-  const iters: Iterable<number>[] = decodedBitmasks.map(b => indexToBit(n, b));
+export function indexToOneOfAlt(...decodedBitmasks: Iterable<number>[]) {
+  const iters: Iterable<number>[] = decodedBitmasks.map(b => indexToBit(b));
   iters.push(alwaysZero());
 
   return {
@@ -54,11 +51,8 @@ export function indexToOneOfAlt(
   };
 }
 
-export function forwardMapOneOfAlt(
-  n: number,
-  ...decodedBitmasks: Iterable<number>[]
-) {
-  const iters: Iterable<number>[] = decodedBitmasks.map(b => indexToBit(n, b));
+export function forwardMapOneOfAlt(...decodedBitmasks: Iterable<number>[]) {
+  const iters: Iterable<number>[] = decodedBitmasks.map(b => indexToBit(b));
   iters.push(alwaysZero());
 
   const forwardMaps: Iterable<number>[] = [];
@@ -89,11 +83,8 @@ export function forwardMapOneOfAlt(
   return forwardMaps;
 }
 
-export function backwardMapOneOfAlt(
-  n: number,
-  ...decodedBitmasks: Iterable<number>[]
-) {
-  const iters: Iterable<number>[] = decodedBitmasks.map(b => indexToBit(n, b));
+export function backwardMapOneOfAlt(...decodedBitmasks: Iterable<number>[]) {
+  const iters: Iterable<number>[] = decodedBitmasks.map(b => indexToBit(b));
   iters.push(alwaysZero());
 
   const backwardMaps: Iterable<number>[] = [];
@@ -137,8 +128,8 @@ export function forwardMapSingleOneOfAlt(
 }
 
 export function backwardMapSingleOneOfAlt(
-  group: number,
   index: number,
+  group: number,
   ...decodedBitmasks: Iterable<number>[]
 ) {
   if (group < decodedBitmasks.length) {

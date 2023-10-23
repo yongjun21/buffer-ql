@@ -3,12 +3,12 @@ import { LazyArray, getDefaultIndexMap } from './LazyArray.js';
 
 import {
   decodeBitmask,
+  decodeOneOf,
   forwardMapIndexes,
   forwardMapSingleIndex,
   indexToOneOf,
   forwardMapOneOf,
   forwardMapSingleOneOf,
-  mergeOneOfIndexes
 } from '../helpers/bitmask.js';
 import { readString } from '../helpers/io.js';
 
@@ -344,10 +344,7 @@ export class Reader<T extends boolean = Single> {
         ? forwardMapSingleIndex(this.currentIndex, bitmask)
         : chainForwardIndexes(
             currentIndex as Int32Array,
-            Int32Array.from(forwardMapIndexes(
-              getMaxIndex(currentIndex as Int32Array, currentLength) + 1,
-              bitmask
-            ))
+            Int32Array.from(forwardMapIndexes(bitmask))
           );
 
       return this._nextReader(nextType, nextOffset, nextIndex, currentLength);
@@ -689,23 +686,20 @@ export class BranchedReader<T extends boolean> extends Reader<T> {
       return new BranchedReader(branches, 0, EMPTY_UINT8, currentIndex);
     }
 
-    const bitmasks: Iterable<number>[] = children.map((_, i) => {
-      const offset = currentOffset + i * size;
-      const bitmaskOffset = _dataView.getInt32(offset + 4, true);
-      const bitmaskLength = _dataView.getInt32(offset + 8, true);
-      return decodeBitmask(
-        new Uint8Array(_dataView.buffer, bitmaskOffset, bitmaskLength),
-        currentLength
-      );
-    });
-    const oneOfIndex = mergeOneOfIndexes(currentLength, ...bitmasks);
+    const bitmaskOffset = _dataView.getInt32(currentOffset, true);
+    const bitmaskLength = _dataView.getInt32(currentOffset + 4, true);
+    const oneOfIndexes = decodeOneOf(
+      new Uint8Array(_dataView.buffer, bitmaskOffset, bitmaskLength),
+      currentLength,
+      children.length
+    )
 
     if (root.singleValue()) {
       const _currentIndex = currentIndex as number;
 
       const [discriminator, branchNextIndex] = forwardMapSingleOneOf(
         _currentIndex,
-        oneOfIndex,
+        oneOfIndexes,
         children.length
       );
 
@@ -724,9 +718,9 @@ export class BranchedReader<T extends boolean> extends Reader<T> {
     } else {
       const _currentIndex = currentIndex as Int32Array;
 
-      const discriminator = Uint8Array.from(indexToOneOf(oneOfIndex));
+      const discriminator = Uint8Array.from(indexToOneOf(oneOfIndexes));
       const forwardMaps = forwardMapOneOf(
-        oneOfIndex,
+        oneOfIndexes,
         children.length
       );
 
@@ -842,12 +836,4 @@ function createRefCache() {
 
 function chainForwardIndexes(a: Int32Array, b: Int32Array) {
   return a.map(i => (i < 0 ? -1 : b[i]));
-}
-
-function getMaxIndex(indexes: Int32Array, length: number) {
-  let max = -1;
-  for (const i of indexes) {
-    if (i > max) max = i;
-  }
-  return Math.min(max, length - 1);
 }
