@@ -18,6 +18,7 @@ import {
   forwardMapSingleOneOf,
   backwardMapSingleOneOf,
   diffIndexes,
+  diffOneOfs,
 } from '../dist/index.js';
 
 testBitmask();
@@ -57,8 +58,9 @@ function testBitmask() {
     2, 2, 2, 2, 2, 0, 0, 0, 
     0, 0, 0, 0, 2, 2, 2, 2
   ];
-  const encodedOneOf = encodeOneOf(oneOfToIndex(test2, 3), 32, 3);
-  const decodedOneOf = decodeOneOf(encodedOneOf, 32, 3);
+  const encodedOneOf = encodeOneOf(oneOfToIndex(test2, 3), 255, 3);
+  const decodedOneOf = decodeOneOf(encodedOneOf, 255, 3);
+  console.log(encodedOneOf);
   console.log(Int32Array.from(decodedOneOf));
 
   const discriminator = indexToOneOf(decodedOneOf, 3);
@@ -81,4 +83,13 @@ function testBitmask() {
   console.log([...diff]);
   console.log([...diffApplied]);
   console.log([...diffUnapplied]);
+
+  const test4 = [
+    1, 1, 2, 2, 2, 1, 0, 2,
+    2, 2, 1, 2, 2, 2, 2, 2,
+    2, 2, 2, 1, 1, 1, 1, 0, 
+    0, 0, 0, 0, 2, 2, 2, 2
+  ];
+  const oneOfDiff = diffOneOfs(decodedOneOf, oneOfToIndex(test4, 3), 3);
+  console.log(Int32Array.from(oneOfDiff));
 }

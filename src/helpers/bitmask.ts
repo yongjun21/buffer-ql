@@ -411,6 +411,63 @@ export function diffIndexes(
   };
 }
 
+export function diffOneOfs(
+  curr: Iterable<number>,
+  next: Iterable<number>,
+  noOfClass: number
+): Iterable<number> {
+  return {
+    *[Symbol.iterator]() {
+      const currIter = curr[Symbol.iterator]();
+      let _curr = currIter.next();
+
+      let lastK = -1;
+      let startIndex = 0;
+      let endIndex = 0;
+      const getNextYield = (nextK: number, nextI: number) => {
+        let nextYield: number | undefined;
+        if (lastK === nextK) {
+          endIndex = nextI;
+        } else {
+          if (endIndex > startIndex) {
+            if (lastK < 0) nextYield = -endIndex;
+            else nextYield = endIndex * noOfClass + lastK;
+          }
+          startIndex = endIndex;
+          endIndex = nextI;
+          lastK = nextK;
+        }
+        return nextYield;
+      }
+
+      for (const _next of next) {
+        const nextK = _next % noOfClass;
+        const nextI = Math.trunc(_next / noOfClass);
+        while (!_curr.done && _curr.value < _next) {
+          const currK = _curr.value % noOfClass;
+          const currI = Math.trunc(_curr.value / noOfClass);
+          const nextYield = getNextYield(currK === nextK ? -1 : nextK, currI);
+          if (nextYield != null) yield nextYield;
+          _curr = currIter.next();
+        }
+        if (_curr.done) {
+          const nextYield = getNextYield(nextK, nextI);
+          if (nextYield != null) yield nextYield;
+        } else {
+          const currK = _curr.value % noOfClass;
+          const nextYield = getNextYield(currK === nextK ? -1 : nextK, nextI);
+          if (nextYield != null) yield nextYield;
+          if (_curr.value === _next) _curr = currIter.next();
+        }
+      }
+      if (endIndex > startIndex) {
+        if (lastK < 0) yield -endIndex;
+        else yield endIndex * noOfClass + lastK;
+      }
+    }
+  }
+}
+
 function getBitReader(arr: Uint8Array) {
   let index = 0;
   let position = 0;
