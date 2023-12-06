@@ -128,11 +128,10 @@ export class Reader<T extends boolean = Single> {
   }
 
   isUndefined(atIndex: number | Int32Array = this.currentIndex) {
-    return (
-      this.currentOffset < 0 ||
-      (typeof atIndex === 'number' &&
-        (atIndex < 0 || atIndex >= this.currentLength))
-    );
+    if (this.currentOffset < 0) return true;
+    return typeof atIndex === 'number'
+      ? atIndex < 0 || atIndex >= this.currentLength
+      : atIndex.length === 0;
   }
 
   isBranched(): this is BranchedReader<T> {

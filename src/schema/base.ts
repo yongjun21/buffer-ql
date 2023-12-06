@@ -7,6 +7,9 @@ import type {
   SchemaTypeChecker as Checker
 } from './index.js';
 
+const isNumber: Checker = value => typeof value === 'number';
+const isString: Checker = value => typeof value === 'string';
+
 export const SCHEMA_BASE_PRIMITIVE_TYPES = [
   {
     name: 'Uint8',
@@ -15,9 +18,7 @@ export const SCHEMA_BASE_PRIMITIVE_TYPES = [
     encode: typed<Encoder<number>>((dv, offset, value) => {
       dv.setUint8(offset, value);
     }),
-    check: typed<Checker>(
-      value => typeof value === 'number' && value >= 0 && value <= 255
-    )
+    check: isNumber
   },
   {
     name: 'Int8',
@@ -26,9 +27,7 @@ export const SCHEMA_BASE_PRIMITIVE_TYPES = [
     encode: typed<Encoder<number>>((dv, offset, value) => {
       dv.setInt8(offset, value);
     }),
-    check: typed<Checker>(
-      value => typeof value === 'number' && value >= -128 && value <= 127
-    )
+    check: isNumber
   },
   {
     name: 'Uint16',
@@ -37,9 +36,7 @@ export const SCHEMA_BASE_PRIMITIVE_TYPES = [
     encode: typed<Encoder<number>>((dv, offset, value) => {
       dv.setUint16(offset, value, true);
     }),
-    check: typed<Checker>(
-      value => typeof value === 'number' && value >= 0 && value <= 65535
-    )
+    check: isNumber
   },
   {
     name: 'Int16',
@@ -48,9 +45,7 @@ export const SCHEMA_BASE_PRIMITIVE_TYPES = [
     encode: typed<Encoder<number>>((dv, offset, value) => {
       dv.setInt16(offset, value, true);
     }),
-    check: typed<Checker>(
-      value => typeof value === 'number' && value >= -32768 && value <= 32767
-    )
+    check: isNumber
   },
   {
     name: 'Uint32',
@@ -59,9 +54,7 @@ export const SCHEMA_BASE_PRIMITIVE_TYPES = [
     encode: typed<Encoder<number>>((dv, offset, value) => {
       dv.setUint32(offset, value, true);
     }),
-    check: typed<Checker>(
-      value => typeof value === 'number' && value >= 0 && value <= 4294967295
-    )
+    check: isNumber
   },
   {
     name: 'Int32',
@@ -70,10 +63,7 @@ export const SCHEMA_BASE_PRIMITIVE_TYPES = [
     encode: typed<Encoder<number>>((dv, offset, value) => {
       dv.setInt32(offset, value, true);
     }),
-    check: typed<Checker>(
-      value =>
-        typeof value === 'number' && value >= -2147483648 && value <= 2147483647
-    )
+    check: isNumber
   },
   {
     name: 'Float32',
@@ -82,12 +72,7 @@ export const SCHEMA_BASE_PRIMITIVE_TYPES = [
     encode: typed<Encoder<number>>((dv, offset, value) => {
       dv.setFloat32(offset, value, true);
     }),
-    check: typed<Checker>(
-      value =>
-        typeof value === 'number' &&
-        value >= -3.4028234663852886e38 &&
-        value <= 3.4028234663852886e38
-    )
+    check: isNumber
   },
   {
     name: 'Float64',
@@ -96,12 +81,7 @@ export const SCHEMA_BASE_PRIMITIVE_TYPES = [
     encode: typed<Encoder<number>>((dv, offset, value) => {
       dv.setFloat32(offset, value, true);
     }),
-    check: typed<Checker>(
-      value =>
-        typeof value === 'number' &&
-        value >= -1.7976931348623157e308 &&
-        value <= 1.7976931348623157e308
-    )
+    check: isNumber
   },
   // strings are just pointer to an UTF8 array
   {
@@ -115,7 +95,7 @@ export const SCHEMA_BASE_PRIMITIVE_TYPES = [
         dv.setInt32(offset + 4, _length, true);
       }
     ),
-    check: typed<Checker>(value => typeof value === 'string')
+    check: isString
   },
   // 2 * Float32
   {
@@ -131,7 +111,7 @@ export const SCHEMA_BASE_PRIMITIVE_TYPES = [
       value =>
         Array.isArray(value) &&
         value.length === 2 &&
-        value.every(v => typeof v === 'number')
+        value.every(isNumber)
     )
   },
   // 3 * Float32
@@ -148,7 +128,7 @@ export const SCHEMA_BASE_PRIMITIVE_TYPES = [
       value =>
         Array.isArray(value) &&
         value.length === 3 &&
-        value.every(v => typeof v === 'number')
+        value.every(isNumber)
     )
   },
   // 4 * Float32
@@ -165,7 +145,7 @@ export const SCHEMA_BASE_PRIMITIVE_TYPES = [
       value =>
         Array.isArray(value) &&
         value.length === 4 &&
-        value.every(v => typeof v === 'number')
+        value.every(isNumber)
     )
   },
   // 9 * Float32
@@ -182,7 +162,7 @@ export const SCHEMA_BASE_PRIMITIVE_TYPES = [
       value =>
         Array.isArray(value) &&
         value.length === 9 &&
-        value.every(v => typeof v === 'number')
+        value.every(isNumber)
     )
   },
   // 16 * Float32
@@ -199,7 +179,7 @@ export const SCHEMA_BASE_PRIMITIVE_TYPES = [
       value =>
         Array.isArray(value) &&
         value.length === 16 &&
-        value.every(v => typeof v === 'number')
+        value.every(isNumber)
     )
   }
 ] as const;
@@ -262,8 +242,6 @@ function transformFlattenedTupleList(arr: ArrayLike<number>, size: number) {
 }
 
 function checkIsFlattenedTupleList(value: any) {
-  if (!Array.isArray(value) && !(value instanceof Float32Array)) {
-    return false;
-  }
-  return value.every(v => typeof v === 'number');
+  if (value instanceof Float32Array) return true;
+  return Array.isArray(value) && value.every(isNumber);
 }

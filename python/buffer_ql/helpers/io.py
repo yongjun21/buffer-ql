@@ -1,4 +1,8 @@
-from bitmask import encode_bitmask
+from collections import namedtuple
+from .bitmask import encode_bitmask
+
+Writer = namedtuple("Writer", ["write", "export"])
+
 
 def create_string_writer(start_offset=0):
     buffer = bytearray()
@@ -14,20 +18,18 @@ def create_string_writer(start_offset=0):
         return output
 
     def export():
-        return bytes(buffer)
+        return buffer
 
-    return {
-        "write": write,
-        "export": export
-    }
+    return Writer(write, export)
 
 
 def create_bitmask_writer(start_offset=0):
     buffer = bytearray()
     offset = 0
 
-    def write(bitmask, n):
+    def write(bitmask, max_index, no_of_classes=1):
         nonlocal offset
+        n = max_index * no_of_classes + no_of_classes - 1
         encoded = encode_bitmask(bitmask, n)
         buffer.extend(encoded)
         length = len(encoded)
@@ -36,9 +38,6 @@ def create_bitmask_writer(start_offset=0):
         return output
 
     def export():
-        return bytes(buffer)
+        return buffer
 
-    return {
-        "write": write,
-        "export": export
-    }
+    return Writer(write, export)

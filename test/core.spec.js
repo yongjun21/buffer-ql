@@ -1,15 +1,10 @@
-import { encodeWithSchema, createReader, ALL_VALUES, LazyArray } from '../dist/index.js';
+import { createReader, ALL_VALUES, LazyArray } from '../dist/index.js';
 
-import DUMMY_DATA from './dummyData.json' assert { type: 'json' };
+import { getEncodedDummyDataPY } from './getEncodedDummyData.js';
+
 import { SCHEMA } from './schema.js';
 
-const { trackedEntities, trackedEntitiesOfInterest } = DUMMY_DATA;
-
-for (const key in trackedEntitiesOfInterest) {
-  trackedEntitiesOfInterest[key] = trackedEntities[trackedEntitiesOfInterest[key]];
-}
-
-const encoded = encodeWithSchema(DUMMY_DATA, SCHEMA, '#');
+const encoded = getEncodedDummyDataPY();
 
 const Reader = createReader(encoded.buffer, SCHEMA);
 
