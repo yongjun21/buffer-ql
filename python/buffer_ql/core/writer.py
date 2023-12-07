@@ -10,7 +10,7 @@ from ..helpers.io import create_string_writer, create_bitmask_writer
 from ..schema.base import encode_int32
 
 
-def encode_with_schema(data, schema, root_type):
+def create_encoder(schema):
     class Writer:
         def __init__(self, type_name, source):
             self.type_name = type_name
@@ -311,40 +311,44 @@ def encode_with_schema(data, schema, root_type):
                 writer.write(dataView, *args)
 
     references = {}
-    ordered_writers = {}
-    stack = []
-    root = Writer(root_type, [data])
-    stack.append(root)
 
-    while stack:
-        writer = stack.pop()
-        type_name = writer.type_name
-        ordered_writers[type_name] = ordered_writers.get(type_name, [])
-        ordered_writers[type_name].append(writer)
-        children = writer.spawn()
-        for i in range(len(children) - 1, -1, -1):
-            stack.append(children[i])
+    def encode(data, root_type):
+        ordered_writers = {}
+        stack = []
+        root = Writer(root_type, [data])
+        stack.append(root)
 
-    offset = 0
-    for writers in ordered_writers.values():
-        for writer in writers:
-            offset = writer.allocate(offset)
+        while stack:
+            writer = stack.pop()
+            type_name = writer.type_name
+            ordered_writers[type_name] = ordered_writers.get(type_name, [])
+            ordered_writers[type_name].append(writer)
+            children = writer.spawn()
+            for i in range(len(children) - 1, -1, -1):
+                stack.append(children[i])
 
-    buffer = bytearray(offset)
+        offset = 0
+        for writers in ordered_writers.values():
+            for writer in writers:
+                offset = writer.allocate(offset)
 
-    string_writer = create_string_writer(offset)
-    for writer in ordered_writers["String"]:
-        writer.write(buffer, string_writer)
-    string_buffer = string_writer.export()
+        buffer = bytearray(offset)
 
-    bitmask_writer = create_bitmask_writer(offset + len(string_buffer))
-    for type_name, writers in ordered_writers.items():
-        if type_name == "String":
-            continue
-        for writer in writers:
-            writer.write(buffer, bitmask_writer)
-    bitmask_buffer = bitmask_writer.export()
+        string_writer = create_string_writer(offset)
+        for writer in ordered_writers["String"]:
+            writer.write(buffer, string_writer)
+        string_buffer = string_writer.export()
 
-    return bytearray(
-        buffer + string_buffer + bitmask_buffer
-    )
+        bitmask_writer = create_bitmask_writer(offset + len(string_buffer))
+        for type_name, writers in ordered_writers.items():
+            if type_name == "String":
+                continue
+            for writer in writers:
+                writer.write(buffer, bitmask_writer)
+        bitmask_buffer = bitmask_writer.export()
+
+        return bytearray(
+            buffer + string_buffer + bitmask_buffer
+        )
+    
+    return encode

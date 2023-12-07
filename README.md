@@ -344,10 +344,10 @@ const mapped = new LazyArray(combined, columnA.length)
 - currently only implemented for NodeJs. Will be adding Pylon encoder soon.
 
 ```js
-import { encodeWithSchema } from 'buffer-ql';
+import { createEncoder } from 'buffer-ql';
 import { SCHEMA } from './schema.js';
 
-const encoded = encodeWithSchema(DATA, SCHEMA, '#');
+const encoded = createEncoder(SCHEMA)(DATA, '#');
 // supply name of root type ('#') in third argument
 ```
 

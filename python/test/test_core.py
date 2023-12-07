@@ -1,7 +1,7 @@
 from pathlib import Path
 import json
 
-from buffer_ql import encode_with_schema
+from buffer_ql import create_encoder
 
 from .test_schema import SCHEMA
 
@@ -17,7 +17,7 @@ tracked_entities_of_interest = dummy_data["trackedEntitiesOfInterest"]
 for key in tracked_entities_of_interest.keys():
     tracked_entities_of_interest[key] = tracked_entities[tracked_entities_of_interest[key]]
 
-encoded = encode_with_schema(dummy_data, SCHEMA, "#")
+encoded = create_encoder(SCHEMA)(dummy_data, "#")
 
 with open(curr_dir / ".." / ".." / "test" / "encodedPY.bin", "wb") as f:
     f.write(encoded)

@@ -15,7 +15,7 @@ import type {
   SchemaNamedTupleType
 } from '../schema/index.js';
 
-export function encodeWithSchema(data: any, schema: Schema, rootType: string) {
+export function createEncoder(schema: Schema) {
   class Writer {
     typeName: string;
     currentType: Schema[string];
@@ -365,53 +365,55 @@ export function encodeWithSchema(data: any, schema: Schema, rootType: string) {
 
   const references = new Map<any, [Writer, number]>();
 
-  const orderedWriters: Record<string, Writer[]> = {};
-  const stack: Writer[] = [];
-  const root = new Writer(rootType, [data]);
-  stack.push(root);
+  return function encode(data: any, rootType: string) {
+    const orderedWriters: Record<string, Writer[]> = {};
+    const stack: Writer[] = [];
+    const root = new Writer(rootType, [data]);
+    stack.push(root);
 
-  while (stack.length > 0) {
-    const writer = stack.pop()!;
-    const { typeName } = writer;
-    orderedWriters[typeName] = orderedWriters[typeName] || [];
-    orderedWriters[typeName].push(writer);
-    const children = writer.spawn();
-    for (let i = children.length - 1; i >= 0; i--) {
-      stack.push(children[i]);
+    while (stack.length > 0) {
+      const writer = stack.pop()!;
+      const { typeName } = writer;
+      orderedWriters[typeName] = orderedWriters[typeName] || [];
+      orderedWriters[typeName].push(writer);
+      const children = writer.spawn();
+      for (let i = children.length - 1; i >= 0; i--) {
+        stack.push(children[i]);
+      }
     }
-  }
 
-  let offset = 0;
-  for (const writers of Object.values(orderedWriters)) {
-    for (const writer of writers) {
-      offset = writer.allocate(offset);
+    let offset = 0;
+    for (const writers of Object.values(orderedWriters)) {
+      for (const writer of writers) {
+        offset = writer.allocate(offset);
+      }
     }
-  }
 
-  const buffer = new ArrayBuffer(offset);
-  const dv = new DataView(buffer);
+    const buffer = new ArrayBuffer(offset);
+    const dv = new DataView(buffer);
 
-  const stringWriter = createStringWriter(offset);
-  for (const writer of orderedWriters.String) {
-    writer.write(dv, stringWriter);
-  }
-  const stringBuffer = stringWriter.export();
-
-  const bitmaskWriter = createBitmaskWriter(offset + stringBuffer.length);
-  for (const [typeName, writers] of Object.entries(orderedWriters)) {
-    if (typeName === 'String') continue;
-    for (const writer of writers) {
-      writer.write(dv, bitmaskWriter);
+    const stringWriter = createStringWriter(offset);
+    for (const writer of orderedWriters.String) {
+      writer.write(dv, stringWriter);
     }
+    const stringBuffer = stringWriter.export();
+
+    const bitmaskWriter = createBitmaskWriter(offset + stringBuffer.length);
+    for (const [typeName, writers] of Object.entries(orderedWriters)) {
+      if (typeName === 'String') continue;
+      for (const writer of writers) {
+        writer.write(dv, bitmaskWriter);
+      }
+    }
+    const bitmaskBuffer = bitmaskWriter.export();
+
+    const combined = new Uint8Array(
+      buffer.byteLength + stringBuffer.length + bitmaskBuffer.length
+    );
+    combined.set(new Uint8Array(buffer), 0);
+    combined.set(stringBuffer, buffer.byteLength);
+    combined.set(bitmaskBuffer, buffer.byteLength + stringBuffer.length);
+
+    return combined;
   }
-  const bitmaskBuffer = bitmaskWriter.export();
-
-  const combined = new Uint8Array(
-    buffer.byteLength + stringBuffer.length + bitmaskBuffer.length
-  );
-  combined.set(new Uint8Array(buffer), 0);
-  combined.set(stringBuffer, buffer.byteLength);
-  combined.set(bitmaskBuffer, buffer.byteLength + stringBuffer.length);
-
-  return combined;
 }

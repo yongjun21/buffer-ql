@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { encodeWithSchema } from '../dist/index.js';
+import { createEncoder } from '../dist/index.js';
 
 import DUMMY_DATA from './dummyData.json' assert { type: 'json' };
 import { SCHEMA } from './schema.js';
@@ -16,7 +16,7 @@ for (const key in trackedEntitiesOfInterest) {
 }
 
 export function getEncodedDummyDataJS() {
-  return encodeWithSchema(DUMMY_DATA, SCHEMA, '#');
+  return createEncoder(SCHEMA)(DUMMY_DATA, '#');
 }
 
 export function getEncodedDummyDataPY() {

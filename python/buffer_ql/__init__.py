@@ -1,4 +1,4 @@
-from .core.writer import encode_with_schema
+from .core.writer import create_encoder
 
 from .schema.index import extend_schema
 
