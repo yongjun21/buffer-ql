@@ -4,7 +4,7 @@ from .bitmask import encode_bitmask
 Writer = namedtuple("Writer", ["write", "export"])
 
 
-def read_varint(dv, offset):
+def read_prefixed_varint(dv, offset):
     value = 0
     shift = 0
     while True:
@@ -18,8 +18,13 @@ def read_varint(dv, offset):
 
 
 def read_string(dv, offset):
-    _offset, _length = read_varint(dv, offset)
+    _offset, _length = read_prefixed_varint(dv, offset)
     return dv[_offset: _offset + _length].decode("utf-8")
+
+
+def read_bitmask(dv, offset):
+    _offset, _length = read_prefixed_varint(dv, offset)
+    return dv[_offset: _offset + _length]
 
 
 def create_string_writer(start_offset=0):
@@ -63,7 +68,9 @@ def create_bitmask_writer(start_offset=0):
     return Writer(write, export)
 
 
-def encode_varint(value):
+def encode_varint(value, signed=False):
+    if signed:
+        value = (value << 1) ^ (value >> 63)
     bytes = []
     while value > 127:
         bytes.append((value & 127) | 128)

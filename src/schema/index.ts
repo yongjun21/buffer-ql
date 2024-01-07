@@ -25,7 +25,6 @@ export interface SchemaPrimitiveType {
 
 export interface SchemaCompoundType<T extends string> {
   type: T;
-  size: number;
   children: string[];
 }
 
@@ -57,27 +56,6 @@ type SchemaType = (
 
 export type Schema = Record<string, SchemaType>;
 
-const SCHEMA_COMPOUND_TYPE_SIZE: Record<string, number> = {
-  // offset + length
-  Array: 8,
-  // offset to keys + offset to values + length
-  Map: 12,
-  // offset to bitmask + offset to value
-  Optional: 4,
-  // offset to bitmask + offset to branch0 + offset to branch1 + ... + offset to branchN
-  OneOf: 4,
-  // offset to value + at index
-  Ref: 8,
-  // offset to value on linked data + at index
-  Link: 8,
-  // alias type is always forwarded
-  Alias: 0,
-  // offset to values
-  Tuple: 4,
-  // offset to values
-  NamedTuple: 4
-};
-
 export function extendSchema<
   T extends string,
   U extends T,
@@ -96,10 +74,7 @@ export function extendSchema<
     };
   }
   for (const record of SCHEMA_BASE_COMPOUND_TYPES) {
-    schema[record.name] = {
-      ...record,
-      size: SCHEMA_COMPOUND_TYPE_SIZE[record.type]
-    };
+    schema[record.name] = record;
   }
   for (const [label, record] of Object.entries(baseTypes)) {
     schema[label] = {
@@ -112,7 +87,6 @@ export function extendSchema<
     for (const [_label, _value] of Object.entries(records)) {
       schema[_label] = {
         ..._value,
-        size: SCHEMA_COMPOUND_TYPE_SIZE[_value.type],
         transform: transforms[_label as T],
         check: checks[_label as T]
       } as SchemaType;
@@ -126,7 +100,6 @@ export function extendSchema<
       const record: SchemaType = {
         type: 'Tuple',
         children: [],
-        size: SCHEMA_COMPOUND_TYPE_SIZE.Tuple
       };
       addRecords({ [label]: record });
       value.forEach((exp, i) => {
@@ -140,7 +113,6 @@ export function extendSchema<
         children: [],
         keys: [],
         indexes: {},
-        size: SCHEMA_COMPOUND_TYPE_SIZE.NamedTuple
       };
       addRecords({ [label]: record });
       Object.entries<string>(value).forEach(([key, exp], i) => {

@@ -149,30 +149,30 @@ def create_encoder(schema):
 
             if self.is_null():
                 return offset
-
-            if (
-                self.is_primitive()
-                or self.is_ref()
-                or self.is_link()
-                or self.is_array()
-                or self.is_map()
-            ):
+            
+            if self.is_primitive():
                 size = current_type["size"]
                 return offset + size * len(self.current_source)
+        
+            if self.is_ref() or self.is_link():
+                return offset + 8 * len(self.current_source)
+            
+            if self.is_array():
+                return offset + 8 * len(self.current_source)
+            
+            if self.is_map():
+                return offset + 12 * len(self.current_source)
 
             if self.is_tuple() or self.is_named_tuple():
-                size = current_type["size"]
                 children = current_type["children"]
-                return offset + size * len(children)
+                return offset + 4 * len(children)
 
             if self.is_optional():
-                size = current_type["size"]
-                return offset + 8 + size * 1
+                return offset + 4 + 4
 
             if self.is_one_of():
-                size = current_type["size"]
                 children = current_type["children"]
-                return offset + 8 + size * len(children)
+                return offset + 4 + 4 * len(children)
 
             raise TypeError(
                 f"Allocation not implemented for {current_type['type']}")
@@ -193,17 +193,15 @@ def create_encoder(schema):
                     encode(dataView, offset, value, *args)
 
             elif self.is_tuple() or self.is_named_tuple():
-                size = current_type["size"]
                 for i, branch in enumerate(branches):
-                    offset = current_offset + i * size
+                    offset = current_offset + i * 4
                     encode_int32(dataView, offset, branch.current_offset)
 
             elif self.is_array():
-                size = current_type["size"]
                 val_writer_group = branches[0]
                 if isinstance(val_writer_group, WriterGroup):
                     for i, child in enumerate(val_writer_group.writers):
-                        offset = current_offset + i * size
+                        offset = current_offset + i * 8
                         encode_int32(dataView, offset, child.current_offset)
                         encode_int32(dataView, offset + 4,
                                      len(child.current_source))
@@ -215,11 +213,10 @@ def create_encoder(schema):
                                  len(child.current_source))
 
             elif self.is_map():
-                size = current_type["size"]
                 key_writer_group, val_writer_group = branches
                 if isinstance(key_writer_group, WriterGroup):
                     for i, child in enumerate(key_writer_group.writers):
-                        offset = current_offset + i * size
+                        offset = current_offset + i * 12
                         encode_int32(dataView, offset, child.current_offset)
                 else:
                     offset = current_offset
@@ -228,7 +225,7 @@ def create_encoder(schema):
 
                 if isinstance(val_writer_group, WriterGroup):
                     for i, child in enumerate(val_writer_group.writers):
-                        offset = current_offset + i * size
+                        offset = current_offset + i * 12
                         encode_int32(dataView, offset + 4,
                                      child.current_offset)
                         encode_int32(dataView, offset + 8,
@@ -259,20 +256,18 @@ def create_encoder(schema):
                     encode_int32(dataView, offset, val_writer.current_offset)
 
             elif self.is_ref():
-                size = current_type["size"]
                 for i, value in enumerate(current_source):
                     ref = references.get(id(value))
                     if not ref:
                         raise ValueError("Reference object outside of scope")
                     writer, index = ref
-                    offset = current_offset + i * size
+                    offset = current_offset + i * 8
                     encode_int32(dataView, offset, writer.current_offset)
                     encode_int32(dataView, offset + 4, index)
 
             elif self.is_link():
-                size = current_type["size"]
                 for i, _ in enumerate(current_source):
-                    offset = current_offset + i * size
+                    offset = current_offset + i * 8
                     encode_int32(dataView, offset, -1)
                     encode_int32(dataView, offset + 4, -1)
 

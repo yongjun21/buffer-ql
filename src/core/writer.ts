@@ -181,37 +181,36 @@ export function createEncoder(schema: Schema) {
 
       if (this.isPrimitive()) {
         // align offset to multiples of size
-        offset = Math.ceil(offset / currentType.size) * currentType.size;
+        const { size } = currentType as SchemaPrimitiveType;
+        offset = Math.ceil(offset / size) * size;
       }
 
       this.currentOffset = offset;
 
       if (this.isNull()) return offset;
 
-      if (
-        this.isPrimitive() ||
-        this.isRef() ||
-        this.isLink() ||
-        this.isArray() ||
-        this.isMap()
-      ) {
+      if (this.isPrimitive()) {
         const { size } = currentType as SchemaPrimitiveType;
         return offset + size * currentSource.length;
       }
 
-      if (this.isTuple() || this.isNamedTuple()) {
-        const { size, children } = currentType as SchemaCompoundType<'Tuple'>;
-        return offset + size * children.length;
+      if (this.isArray()) return offset + 8 * currentSource.length;
+      if (this.isMap()) return offset + 12 * currentSource.length;
+
+      if (this.isRef() || this.isLink()) {
+        return offset + 8 * currentSource.length;
       }
 
-      if (this.isOptional()) {
-        const { size } = currentType as SchemaCompoundType<'Optional'>;
-        return offset + 8 + size * 1;
+      if (this.isTuple() || this.isNamedTuple()) {
+        const { children } = currentType as SchemaCompoundType<'Tuple'>;
+        return offset + 4 * children.length;
       }
+
+      if (this.isOptional()) return offset + 4 + 4;
 
       if (this.isOneOf()) {
-        const { size, children } = currentType as SchemaCompoundType<'OneOf'>;
-        return offset + 8 + size * children.length;
+        const { children } = currentType as SchemaCompoundType<'OneOf'>;
+        return offset + 4 + 4 * children.length;
       }
 
       throw new TypeError(`Allocation not implemented for ${currentType.type}`);
@@ -229,17 +228,15 @@ export function createEncoder(schema: Schema) {
           encode(dataView, offset, value, ...args);
         });
       } else if (this.isTuple() || this.isNamedTuple()) {
-        const { size } = currentType as SchemaCompoundType<'Tuple'>;
         branches.forEach((branch, i) => {
-          const offset = currentOffset + i * size;
+          const offset = currentOffset + i * 4;
           dataView.setInt32(offset, branch.currentOffset, true);
         });
       } else if (this.isArray()) {
-        const { size } = currentType as SchemaCompoundType<'Array'>;
         const [valWriterGroup] = branches as [Writer];
         if (valWriterGroup instanceof WriterGroup) {
           valWriterGroup.writers.forEach((child, i) => {
-            const offset = currentOffset + i * size;
+            const offset = currentOffset + i * 8;
             dataView.setInt32(offset, child.currentOffset, true);
             dataView.setInt32(offset + 4, child.currentSource.length, true);
           });
@@ -250,11 +247,10 @@ export function createEncoder(schema: Schema) {
           dataView.setInt32(offset + 4, child.currentSource.length, true);
         }
       } else if (this.isMap()) {
-        const { size } = currentType as SchemaCompoundType<'Map'>;
         const [keyWriterGroup, valWriterGroup] = branches as [Writer, Writer];
         if (keyWriterGroup instanceof WriterGroup) {
           keyWriterGroup.writers.forEach((child, i) => {
-            const offset = currentOffset + i * size;
+            const offset = currentOffset + i * 12;
             dataView.setInt32(offset, child.currentOffset, true);
           });
         } else {
@@ -264,7 +260,7 @@ export function createEncoder(schema: Schema) {
         }
         if (valWriterGroup instanceof WriterGroup) {
           valWriterGroup.writers.forEach((child, i) => {
-            const offset = currentOffset + i * size;
+            const offset = currentOffset + i * 12;
             dataView.setInt32(offset + 4, child.currentOffset, true);
             dataView.setInt32(offset + 8, child.currentSource.length, true);
           });
@@ -296,21 +292,19 @@ export function createEncoder(schema: Schema) {
           dataView.setInt32(offset, valWriter.currentOffset, true);
         });
       } else if (this.isRef()) {
-        const { size } = currentType as SchemaCompoundType<'Ref'>;
         currentSource.forEach((value, i) => {
           const ref = references.get(value);
           if (!ref) {
             throw new ValueError('Reference object outside of scope');
           }
           const [writer, index] = ref;
-          const offset = currentOffset + i * size;
+          const offset = currentOffset + i * 8;
           dataView.setInt32(offset, writer.currentOffset, true);
           dataView.setInt32(offset + 4, index, true);
         });
       } else if (this.isLink()) {
-        const { size } = currentType as SchemaCompoundType<'Link'>;
         currentSource.forEach((_, i) => {
-          const offset = currentOffset + i * size;
+          const offset = currentOffset + i * 8;
           dataView.setInt32(offset, -1, true);
           dataView.setInt32(offset + 4, -1, true);
         });

@@ -2,7 +2,7 @@ import { encodeBitmask } from './bitmask.js';
 
 const textDecoder = new TextDecoder();
 
-export function readVarint(dv: DataView, offset: number) {
+export function readPrefixedVarint(dv: DataView, offset: number) {
   let _offset = dv.getInt32(offset, true)
   let value = 0;
   let shift = 0;
@@ -15,9 +15,29 @@ export function readVarint(dv: DataView, offset: number) {
   return [value, _offset];
 }
 
+export function readVarint(dv: DataView, offset: number, signed = false) {
+  let value = 0;
+  let shift = 0;
+  let byte;
+  do {
+    byte = dv.getUint8(offset++);
+    value |= (byte & 127) << shift;
+    shift += 7;
+  } while (byte & 128);
+  if (signed) {
+    return value & 1 ? -(value >>> 1) - 1 : value >>> 1;
+  }
+  return value;
+}
+
 export function readString(dv: DataView, offset: number) {
-  const [_length, _offset] = readVarint(dv, offset);
+  const [_length, _offset] = readPrefixedVarint(dv, offset);
   return textDecoder.decode(new Uint8Array(dv.buffer, _offset, _length));
+}
+
+export function readBitmask(dv: DataView, offset: number, ) {
+  const [_length, _offset] = readPrefixedVarint(dv, offset);
+  return new Uint8Array(dv.buffer, _offset, _length);
 }
 
 export function createStringWriter(startOffset = 0) {
@@ -76,7 +96,8 @@ export function createBitmaskWriter(startOffset = 0) {
   };
 }
 
-export function encodeVarint(value: number) {
+export function encodeVarint(value: number, signed = false) {
+  if (signed) value = value << 1 ^ (value >> 63);
   const bytes = [];
   while (value > 127) {
     bytes.push((value & 127) | 128);

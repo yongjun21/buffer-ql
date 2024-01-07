@@ -2,28 +2,6 @@ from .base import SCHEMA_BASE_PRIMITIVE_TYPES, SCHEMA_BASE_COMPOUND_TYPES
 from .compound import parse_expression
 
 
-SCHEMA_COMPOUND_TYPE_SIZE = {
-    # offset + length
-    "Array": 8,
-    # offset to keys + offset to values + length
-    "Map": 12,
-    # offset to bitmask + offset to value
-    "Optional": 4,
-    # offset to bitmask + offset to branch0 + offset to branch1 + ... + offset to branchN
-    "OneOf": 4,
-    # offset to value + at index
-    "Ref": 8,
-    # offset to value on linked data + at index
-    "Link": 8,
-    # alias type is always forwarded
-    "Alias": 0,
-    # offset to values
-    "Tuple": 4,
-    # offset to values
-    "NamedTuple": 4,
-}
-
-
 def extend_schema(base_types, types, transforms={}, checks={}):
     schema = {}
 
@@ -31,8 +9,7 @@ def extend_schema(base_types, types, transforms={}, checks={}):
         schema[record["name"]] = {**record, "type": "Primitive"}
 
     for record in SCHEMA_BASE_COMPOUND_TYPES:
-        schema[record["name"]] = {
-            **record, "size": SCHEMA_COMPOUND_TYPE_SIZE[record["type"]]}
+        schema[record["name"]] = record
 
     for label, record in base_types.items():
         schema[label] = {**record, "type": "Primitive"}
@@ -41,7 +18,6 @@ def extend_schema(base_types, types, transforms={}, checks={}):
         for _label, _value in records.items():
             schema[_label] = {
                 **_value,
-                "size": SCHEMA_COMPOUND_TYPE_SIZE[_value["type"]],
                 "transform": transforms.get(_label),
                 "check": checks.get(_label)
             }
@@ -53,7 +29,6 @@ def extend_schema(base_types, types, transforms={}, checks={}):
             record = {
                 "type": "Tuple",
                 "children": [],
-                "size": SCHEMA_COMPOUND_TYPE_SIZE["Tuple"]
             }
             add_records({label: record})
             for i, exp in enumerate(value):
@@ -66,7 +41,6 @@ def extend_schema(base_types, types, transforms={}, checks={}):
                 "children": [],
                 "keys": [],
                 "indexes": {},
-                "size": SCHEMA_COMPOUND_TYPE_SIZE["NamedTuple"]
             }
             add_records({label: record})
             for key, exp in value.items():

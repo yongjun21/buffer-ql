@@ -10,7 +10,7 @@ import {
   forwardMapOneOf,
   forwardMapSingleOneOf
 } from '../helpers/bitmask.js';
-import { readString, readVarint } from '../helpers/io.js';
+import { readBitmask, readString } from '../helpers/io.js';
 
 import { TypeError, UsageError, InternalError } from '../helpers/error.js';
 
@@ -264,14 +264,14 @@ export class Reader<T extends boolean = Single> {
         throw new UsageError('Tuple type can only be accessed by index');
       }
       const i = key;
-      const { size, children } = currentType as SchemaCompoundType<'Tuple'>;
+      const { children } = currentType as SchemaCompoundType<'Tuple'>;
       if (i < 0 || i >= children.length) {
         throw new UsageError(`Index ${i} is out of bounds`);
       }
       const nextType = children[i];
       const nextOffset = this.isUndefined()
         ? -1
-        : _dataView.getInt32(currentOffset + i * size, true);
+        : _dataView.getInt32(currentOffset + i * 4, true);
 
       return this._nextReader(
         nextType,
@@ -283,7 +283,7 @@ export class Reader<T extends boolean = Single> {
       if (typeof key !== 'string') {
         throw new UsageError('Named tuple type can only be accessed by key');
       }
-      const { size, children, indexes } = currentType as SchemaNamedTupleType;
+      const { children, indexes } = currentType as SchemaNamedTupleType;
       if (!(key in indexes)) {
         throw new UsageError(`Undefined key ${key}`);
       }
@@ -291,7 +291,7 @@ export class Reader<T extends boolean = Single> {
       const nextType = children[i];
       const nextOffset = this.isUndefined()
         ? -1
-        : _dataView.getInt32(currentOffset + i * size, true);
+        : _dataView.getInt32(currentOffset + i * 4, true);
 
       return this._nextReader(
         nextType,
@@ -332,13 +332,9 @@ export class Reader<T extends boolean = Single> {
         return this._nextReader(nextType, -1, currentIndex, currentLength);
       }
 
-      const [bitmaskLength, bitmaskOffset] = readVarint(
-        _dataView,
-        currentOffset
-      );
       const nextOffset = _dataView.getInt32(currentOffset + 4, true);
       const bitmask = decodeBitmask(
-        new Uint8Array(_dataView.buffer, bitmaskOffset, bitmaskLength),
+        readBitmask(_dataView, currentOffset),
         currentLength
       );
       const nextIndex = this.singleValue()
@@ -383,7 +379,6 @@ export class Reader<T extends boolean = Single> {
   ): Reader<boolean> {
     const { currentType, currentOffset, _dataView } = this;
     const {
-      size,
       children: [nextType]
     } = currentType as SchemaCompoundType<'Array'>;
 
@@ -399,7 +394,7 @@ export class Reader<T extends boolean = Single> {
     }
     if (this.isUndefined(atIndex)) return this._nextReader(nextType, -1, -1, 0);
 
-    const offset = currentOffset + atIndex * size;
+    const offset = currentOffset + atIndex * 8;
     const nextOffset = _dataView.getInt32(offset, true);
     const nextLength = _dataView.getInt32(offset + 4, true);
     return this._nextReader(
@@ -435,7 +430,6 @@ export class Reader<T extends boolean = Single> {
   ): Reader<boolean> {
     const { currentType, currentOffset, _dataView } = this;
     const {
-      size,
       children: [nextType]
     } = currentType as SchemaCompoundType<'Array'>;
 
@@ -446,13 +440,13 @@ export class Reader<T extends boolean = Single> {
     }
     if (this.isUndefined(atIndex)) return this._nextReader(nextType, -1, -1, 0);
 
-    const offset = currentOffset + atIndex * size;
+    const offset = currentOffset + atIndex * 12;
     const offsetToKeys = _dataView.getInt32(offset, true);
     const offsetToValues = _dataView.getInt32(offset + 4, true);
     const nextLength = _dataView.getInt32(offset + 8, true);
     const getIndex = (k: string) => {
       for (let i = 0; i < nextLength; i++) {
-        if (k === readString(_dataView, offsetToKeys + i * 8)) return i;
+        if (k === readString(_dataView, offsetToKeys + i * 4)) return i;
       }
       return -1;
     };
@@ -493,13 +487,12 @@ export class Reader<T extends boolean = Single> {
   private _refReaderGet(atIndex: number): Reader<boolean> {
     const { currentType, currentOffset, _dataView } = this;
     const {
-      size,
       children: [nextType]
     } = currentType as SchemaCompoundType<'Ref'>;
 
     if (this.isUndefined(atIndex)) return this._nextReader(nextType, -1, -1, 0);
 
-    const offset = currentOffset + atIndex * size;
+    const offset = currentOffset + atIndex * 8;
     const nextOffset = _dataView.getInt32(offset, true);
     const nextIndex = _dataView.getInt32(offset + 4, true);
     return this._nextReader(nextType, nextOffset, nextIndex, nextIndex + 1);
@@ -508,10 +501,10 @@ export class Reader<T extends boolean = Single> {
   private _linkReaderGet(atIndex: number): Reader<boolean> {
     const NextReader = this.constructor as typeof Reader;
     const { currentType, currentOffset, _dataView } = this;
-    const { size, children } = currentType as SchemaCompoundType<'Link'>;
+    const { children } = currentType as SchemaCompoundType<'Link'>;
     const [schemaKey, nextType] = children[0].split('/');
     const isUndefined = this.isUndefined(atIndex);
-    const offset = currentOffset + atIndex * size;
+    const offset = currentOffset + atIndex * 8;
     const nextOffset = isUndefined ? -1 : _dataView.getInt32(offset, true);
     const nextIndex = isUndefined ? -1 : _dataView.getInt32(offset + 4, true);
 
@@ -678,7 +671,7 @@ export class BranchedReader<T extends boolean> extends Reader<T> {
       currentLength,
       _dataView
     } = _root;
-    const { size, children } = currentType as SchemaCompoundType<'OneOf'>;
+    const { children } = currentType as SchemaCompoundType<'OneOf'>;
 
     if (root.isUndefined()) {
       const branches = children.map(nextType =>
@@ -687,9 +680,8 @@ export class BranchedReader<T extends boolean> extends Reader<T> {
       return new BranchedReader(branches, 0, EMPTY_UINT8, currentIndex);
     }
 
-    const [bitmaskLength, bitmaskOffset] = readVarint(_dataView, currentOffset);
     const oneOfIndex = decodeOneOf(
-      new Uint8Array(_dataView.buffer, bitmaskOffset, bitmaskLength),
+      readBitmask(_dataView, currentOffset),
       currentLength,
       children.length
     );
@@ -704,7 +696,7 @@ export class BranchedReader<T extends boolean> extends Reader<T> {
       );
 
       const branches = children.map((nextType, i) => {
-        const offset = currentOffset + 4 + i * size;
+        const offset = currentOffset + 4 + i * 4;
         const nextOffset = _dataView.getInt32(offset, true);
         return _root._nextReader(
           nextType,
@@ -725,7 +717,7 @@ export class BranchedReader<T extends boolean> extends Reader<T> {
 
       const branches = children.map((nextType, i) => {
         const nextIndex = Int32Array.from(forwardMaps[i]);
-        const offset = currentOffset + 4 + i * size;
+        const offset = currentOffset + 4 + i * 4;
         const nextOffset = _dataView.getInt32(offset, true);
         return _root._nextReader(
           nextType,
