@@ -277,24 +277,22 @@ export function createEncoder(schema: Schema) {
       } else if (this.isOptional()) {
         const bitmaskWriter: ReturnType<typeof createBitmaskWriter> = args[0];
         const [valWriter] = branches as [Writer];
-        const [bitmaskOffset, bitmaskLength] = bitmaskWriter.write(
+        const bitmaskOffset = bitmaskWriter.write(
           bitmask!,
           currentSource.length
         );
         dataView.setInt32(currentOffset, bitmaskOffset, true);
-        dataView.setInt32(currentOffset + 4, bitmaskLength, true);
-        dataView.setInt32(currentOffset + 8, valWriter.currentOffset, true);
+        dataView.setInt32(currentOffset + 4, valWriter.currentOffset, true);
       } else if (this.isOneOf()) {
         const bitmaskWriter: ReturnType<typeof createBitmaskWriter> = args[0];
-        const [bitmaskOffset, bitmaskLength] = bitmaskWriter.write(
+        const bitmaskOffset = bitmaskWriter.write(
           bitmask!,
           currentSource.length,
           branches.length
         );
         dataView.setInt32(currentOffset, bitmaskOffset, true);
-        dataView.setInt32(currentOffset + 4, bitmaskLength, true);
         (branches as Writer[]).forEach((valWriter, i) => {
-          const offset = currentOffset + 8 + i * 4;
+          const offset = currentOffset + 4 + i * 4;
           dataView.setInt32(offset, valWriter.currentOffset, true);
         });
       } else if (this.isRef()) {

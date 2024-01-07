@@ -7,9 +7,9 @@ SCHEMA_COMPOUND_TYPE_SIZE = {
     "Array": 8,
     # offset to keys + offset to values + length
     "Map": 12,
-    # (offset + length) to bitmask + offset to value
+    # offset to bitmask + offset to value
     "Optional": 4,
-    # (offset + length) to bitmask + offset to branch0 + offset to branch1 + ... + offset to branchN
+    # offset to bitmask + offset to branch0 + offset to branch1 + ... + offset to branchN
     "OneOf": 4,
     # offset to value + at index
     "Ref": 8,

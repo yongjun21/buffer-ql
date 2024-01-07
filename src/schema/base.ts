@@ -86,13 +86,11 @@ export const SCHEMA_BASE_PRIMITIVE_TYPES = [
   // strings are just pointer to an UTF8 array
   {
     name: 'String',
-    size: 8,
+    size: 4,
     decode: typed<Decoder<string>>(readString),
     encode: typed<Encoder<string>>(
       (dv, offset, value, stringWriter: StringWriter) => {
-        const [_offset, _length] = stringWriter.write(value);
-        dv.setInt32(offset, _offset, true);
-        dv.setInt32(offset + 4, _length, true);
+        dv.setInt32(offset, stringWriter.write(value), true);
       }
     ),
     check: isString

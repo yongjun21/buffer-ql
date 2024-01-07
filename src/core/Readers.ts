@@ -10,7 +10,7 @@ import {
   forwardMapOneOf,
   forwardMapSingleOneOf
 } from '../helpers/bitmask.js';
-import { readString } from '../helpers/io.js';
+import { readString, readVarint } from '../helpers/io.js';
 
 import { TypeError, UsageError, InternalError } from '../helpers/error.js';
 
@@ -332,9 +332,11 @@ export class Reader<T extends boolean = Single> {
         return this._nextReader(nextType, -1, currentIndex, currentLength);
       }
 
-      const bitmaskOffset = _dataView.getInt32(currentOffset, true);
-      const bitmaskLength = _dataView.getInt32(currentOffset + 4, true);
-      const nextOffset = _dataView.getInt32(currentOffset + 8, true);
+      const [bitmaskLength, bitmaskOffset] = readVarint(
+        _dataView,
+        currentOffset
+      );
+      const nextOffset = _dataView.getInt32(currentOffset + 4, true);
       const bitmask = decodeBitmask(
         new Uint8Array(_dataView.buffer, bitmaskOffset, bitmaskLength),
         currentLength
@@ -685,8 +687,7 @@ export class BranchedReader<T extends boolean> extends Reader<T> {
       return new BranchedReader(branches, 0, EMPTY_UINT8, currentIndex);
     }
 
-    const bitmaskOffset = _dataView.getInt32(currentOffset, true);
-    const bitmaskLength = _dataView.getInt32(currentOffset + 4, true);
+    const [bitmaskLength, bitmaskOffset] = readVarint(_dataView, currentOffset);
     const oneOfIndex = decodeOneOf(
       new Uint8Array(_dataView.buffer, bitmaskOffset, bitmaskLength),
       currentLength,
@@ -703,7 +704,7 @@ export class BranchedReader<T extends boolean> extends Reader<T> {
       );
 
       const branches = children.map((nextType, i) => {
-        const offset = currentOffset + i * size;
+        const offset = currentOffset + 4 + i * size;
         const nextOffset = _dataView.getInt32(offset, true);
         return _root._nextReader(
           nextType,
@@ -724,7 +725,7 @@ export class BranchedReader<T extends boolean> extends Reader<T> {
 
       const branches = children.map((nextType, i) => {
         const nextIndex = Int32Array.from(forwardMaps[i]);
-        const offset = currentOffset + 8 + i * size;
+        const offset = currentOffset + 4 + i * size;
         const nextOffset = _dataView.getInt32(offset, true);
         return _root._nextReader(
           nextType,

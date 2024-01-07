@@ -243,21 +243,19 @@ def create_encoder(schema):
             elif self.is_optional():
                 bitmask_writer = args[0]
                 val_writer = branches[0]
-                bitmask_offset, bitmask_length = bitmask_writer.write(
+                bitmask_offset = bitmask_writer.write(
                     bitmask, len(current_source))
                 encode_int32(dataView, current_offset, bitmask_offset)
-                encode_int32(dataView, current_offset + 4, bitmask_length)
                 encode_int32(dataView, current_offset +
-                             8, val_writer.current_offset)
+                             4, val_writer.current_offset)
 
             elif self.is_one_of():
                 bitmask_writer = args[0]
-                bitmask_offset, bitmask_length = bitmask_writer.write(
+                bitmask_offset = bitmask_writer.write(
                     bitmask, len(current_source), len(branches))
                 encode_int32(dataView, current_offset, bitmask_offset)
-                encode_int32(dataView, current_offset + 4, bitmask_length)
                 for i, val_writer in enumerate(branches):
-                    offset = current_offset + 8 + i * 4
+                    offset = current_offset + 4 + i * 4
                     encode_int32(dataView, offset, val_writer.current_offset)
 
             elif self.is_ref():

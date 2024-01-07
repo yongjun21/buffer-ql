@@ -1,4 +1,5 @@
 import struct
+from ..helpers.io import read_string
 
 
 def decode_uint8(dv, offset):
@@ -65,16 +66,8 @@ def encode_float64(dv, offset, value, *arg):
     dv[offset: offset + 8] = struct.pack("d", value)
 
 
-def decode_string(dv, offset):
-    _offset = decode_int32(dv, offset)
-    _length = decode_int32(dv, offset + 4)
-    return dv[_offset: _offset + _length].decode("utf-8")
-
-
 def encode_string(dv, offset, value, string_writer):
-    _offset, _length = string_writer.write(value)
-    encode_int32(dv, offset, _offset)
-    encode_int32(dv, offset + 4, _length)
+    encode_int32(dv, offset, string_writer.write(value))
 
 
 def decode_vec(size):
@@ -175,8 +168,8 @@ SCHEMA_BASE_PRIMITIVE_TYPES = [
     },
     {
         "name": "String",
-        "size": 8,
-        "decode": decode_string,
+        "size": 4,
+        "decode": read_string,
         "encode": encode_string,
         "check": is_string,
     },
