@@ -1,4 +1,4 @@
-import { readString, StringWriter } from '../helpers/io.js';
+import { readString, StringWriter, writeVarint } from '../helpers/io.js';
 import { typed } from '../helpers/common.js';
 
 import type {
@@ -90,7 +90,7 @@ export const SCHEMA_BASE_PRIMITIVE_TYPES = [
     decode: typed<Decoder<string>>(readString),
     encode: typed<Encoder<string>>(
       (dv, offset, value, stringWriter: StringWriter) => {
-        dv.setInt32(offset, stringWriter.write(value), true);
+        writeVarint(dv, offset, stringWriter.write(value), true);
       }
     ),
     check: isString

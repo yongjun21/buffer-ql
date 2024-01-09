@@ -6,9 +6,11 @@ import { SCHEMA } from './schema.js';
 
 const encoded = getEncodedDummyDataPY();
 
+console.log(encoded.length);
+
 const Reader = createReader(encoded.buffer, SCHEMA);
 
-const trackedEntitiesReader = new Reader('#', 0).get('trackedEntities');
+const trackedEntitiesReader = new Reader('#', 1).get('trackedEntities');
 
 const waypointsReader = trackedEntitiesReader.get(ALL_VALUES).get('waypoints');
 

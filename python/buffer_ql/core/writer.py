@@ -5,7 +5,11 @@ from ..helpers.bitmask import (
     one_of_to_index,
     backward_map_one_of
 )
-from ..helpers.io import create_string_writer, create_bitmask_writer
+from ..helpers.io import (
+    create_string_writer,
+    create_bitmask_writer,
+    write_varint
+)
 
 from ..schema.base import encode_int32
 
@@ -139,7 +143,11 @@ def create_encoder(schema):
             return next_branches
 
         def allocate(self, offset):
+            if self.is_null():
+                return offset
+
             current_type = self.current_type
+            current_source = self.current_source
 
             if self.is_primitive():
                 offset = math.ceil(
@@ -147,21 +155,18 @@ def create_encoder(schema):
 
             self.current_offset = offset
 
-            if self.is_null():
-                return offset
-            
             if self.is_primitive():
                 size = current_type["size"]
-                return offset + size * len(self.current_source)
-        
+                return offset + size * len(current_source)
+
             if self.is_ref() or self.is_link():
-                return offset + 8 * len(self.current_source)
-            
+                return offset + 8 * len(current_source)
+
             if self.is_array():
-                return offset + 8 * len(self.current_source)
-            
+                return offset + 8 * len(current_source)
+
             if self.is_map():
-                return offset + 12 * len(self.current_source)
+                return offset + 12 * len(current_source)
 
             if self.is_tuple() or self.is_named_tuple():
                 children = current_type["children"]
@@ -195,21 +200,22 @@ def create_encoder(schema):
             elif self.is_tuple() or self.is_named_tuple():
                 for i, branch in enumerate(branches):
                     offset = current_offset + i * 4
-                    encode_int32(dataView, offset, branch.current_offset)
+                    write_varint(dataView, offset, branch.current_offset, True)
 
             elif self.is_array():
                 val_writer_group = branches[0]
                 if isinstance(val_writer_group, WriterGroup):
                     for i, child in enumerate(val_writer_group.writers):
                         offset = current_offset + i * 8
-                        encode_int32(dataView, offset, child.current_offset)
-                        encode_int32(dataView, offset + 4,
+                        write_varint(dataView, offset,
+                                     child.current_offset, True)
+                        write_varint(dataView, offset + 4,
                                      len(child.current_source))
                 else:
                     offset = current_offset
                     child = val_writer_group
-                    encode_int32(dataView, offset, child.current_offset)
-                    encode_int32(dataView, offset + 4,
+                    write_varint(dataView, offset, child.current_offset, True)
+                    write_varint(dataView, offset + 4,
                                  len(child.current_source))
 
             elif self.is_map():
@@ -217,24 +223,26 @@ def create_encoder(schema):
                 if isinstance(key_writer_group, WriterGroup):
                     for i, child in enumerate(key_writer_group.writers):
                         offset = current_offset + i * 12
-                        encode_int32(dataView, offset, child.current_offset)
+                        write_varint(dataView, offset,
+                                     child.current_offset, True)
                 else:
                     offset = current_offset
                     child = key_writer_group
-                    encode_int32(dataView, offset, child.current_offset)
+                    write_varint(dataView, offset, child.current_offset, True)
 
                 if isinstance(val_writer_group, WriterGroup):
                     for i, child in enumerate(val_writer_group.writers):
                         offset = current_offset + i * 12
-                        encode_int32(dataView, offset + 4,
-                                     child.current_offset)
-                        encode_int32(dataView, offset + 8,
+                        write_varint(dataView, offset + 4,
+                                     child.current_offset, True)
+                        write_varint(dataView, offset + 8,
                                      len(child.current_source))
                 else:
                     offset = current_offset
                     child = val_writer_group
-                    encode_int32(dataView, offset + 4, child.current_offset)
-                    encode_int32(dataView, offset + 8,
+                    write_varint(dataView, offset + 4,
+                                 child.current_offset, True)
+                    write_varint(dataView, offset + 8,
                                  len(child.current_source))
 
             elif self.is_optional():
@@ -242,18 +250,19 @@ def create_encoder(schema):
                 val_writer = branches[0]
                 bitmask_offset = bitmask_writer.write(
                     bitmask, len(current_source))
-                encode_int32(dataView, current_offset, bitmask_offset)
-                encode_int32(dataView, current_offset +
-                             4, val_writer.current_offset)
+                write_varint(dataView, current_offset, bitmask_offset, True)
+                write_varint(dataView, current_offset +
+                             4, val_writer.current_offset, True)
 
             elif self.is_one_of():
                 bitmask_writer = args[0]
                 bitmask_offset = bitmask_writer.write(
                     bitmask, len(current_source), len(branches))
-                encode_int32(dataView, current_offset, bitmask_offset)
+                write_varint(dataView, current_offset, bitmask_offset, True)
                 for i, val_writer in enumerate(branches):
                     offset = current_offset + 4 + i * 4
-                    encode_int32(dataView, offset, val_writer.current_offset)
+                    write_varint(dataView, offset,
+                                 val_writer.current_offset, True)
 
             elif self.is_ref():
                 for i, value in enumerate(current_source):
@@ -262,8 +271,8 @@ def create_encoder(schema):
                         raise ValueError("Reference object outside of scope")
                     writer, index = ref
                     offset = current_offset + i * 8
-                    encode_int32(dataView, offset, writer.current_offset)
-                    encode_int32(dataView, offset + 4, index)
+                    write_varint(dataView, offset, writer.current_offset, True)
+                    write_varint(dataView, offset + 4, index, True)
 
             elif self.is_link():
                 for i, _ in enumerate(current_source):
@@ -306,7 +315,8 @@ def create_encoder(schema):
     references = {}
 
     def encode(data, root_type):
-        ordered_writers = {}
+        references.clear()
+        grouped_writers = {}
         stack = []
         root = Writer(root_type, [data])
         stack.append(root)
@@ -314,26 +324,29 @@ def create_encoder(schema):
         while stack:
             writer = stack.pop()
             type_name = writer.type_name
-            ordered_writers[type_name] = ordered_writers.get(type_name, [])
-            ordered_writers[type_name].append(writer)
+            grouped_writers[type_name] = grouped_writers.get(type_name, [])
+            grouped_writers[type_name].append(writer)
             children = writer.spawn()
             for i in range(len(children) - 1, -1, -1):
                 stack.append(children[i])
 
-        offset = 0
-        for writers in ordered_writers.values():
+        offset = 1
+        sorted_writers = sorted(grouped_writers.values(
+        ), key=lambda writers: -writers[0].current_type["size"] if writers[0].is_primitive() else -pow(2, 32))
+
+        for writers in sorted_writers:
             for writer in writers:
                 offset = writer.allocate(offset)
 
         buffer = bytearray(offset)
 
         string_writer = create_string_writer(offset)
-        for writer in ordered_writers["String"]:
+        for writer in grouped_writers["String"]:
             writer.write(buffer, string_writer)
         string_buffer = string_writer.export()
 
         bitmask_writer = create_bitmask_writer(offset + len(string_buffer))
-        for type_name, writers in ordered_writers.items():
+        for type_name, writers in grouped_writers.items():
             if type_name == "String":
                 continue
             for writer in writers:
@@ -343,5 +356,5 @@ def create_encoder(schema):
         return bytearray(
             buffer + string_buffer + bitmask_buffer
         )
-    
+
     return encode

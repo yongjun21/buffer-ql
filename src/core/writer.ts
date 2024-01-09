@@ -4,7 +4,11 @@ import {
   backwardMapIndexes,
   backwardMapOneOf
 } from '../helpers/bitmask.js';
-import { createStringWriter, createBitmaskWriter } from '../helpers/io.js';
+import {
+  createStringWriter,
+  createBitmaskWriter,
+  writeVarint
+} from '../helpers/io.js';
 
 import { ValueError } from '../helpers/error.js';
 
@@ -177,6 +181,8 @@ export function createEncoder(schema: Schema) {
     }
 
     allocate(offset: number) {
+      if (this.isNull()) return offset;
+
       const { currentType, currentSource } = this;
 
       if (this.isPrimitive()) {
@@ -186,8 +192,6 @@ export function createEncoder(schema: Schema) {
       }
 
       this.currentOffset = offset;
-
-      if (this.isNull()) return offset;
 
       if (this.isPrimitive()) {
         const { size } = currentType as SchemaPrimitiveType;
@@ -230,45 +234,45 @@ export function createEncoder(schema: Schema) {
       } else if (this.isTuple() || this.isNamedTuple()) {
         branches.forEach((branch, i) => {
           const offset = currentOffset + i * 4;
-          dataView.setInt32(offset, branch.currentOffset, true);
+          writeVarint(dataView, offset, branch.currentOffset, true);
         });
       } else if (this.isArray()) {
         const [valWriterGroup] = branches as [Writer];
         if (valWriterGroup instanceof WriterGroup) {
           valWriterGroup.writers.forEach((child, i) => {
             const offset = currentOffset + i * 8;
-            dataView.setInt32(offset, child.currentOffset, true);
-            dataView.setInt32(offset + 4, child.currentSource.length, true);
+            writeVarint(dataView, offset, child.currentOffset, true);
+            writeVarint(dataView, offset + 4, child.currentSource.length);
           });
         } else {
           const offset = currentOffset;
           const child = valWriterGroup;
-          dataView.setInt32(offset, child.currentOffset, true);
-          dataView.setInt32(offset + 4, child.currentSource.length, true);
+          writeVarint(dataView, offset, child.currentOffset, true);
+          writeVarint(dataView, offset + 4, child.currentSource.length);
         }
       } else if (this.isMap()) {
         const [keyWriterGroup, valWriterGroup] = branches as [Writer, Writer];
         if (keyWriterGroup instanceof WriterGroup) {
           keyWriterGroup.writers.forEach((child, i) => {
             const offset = currentOffset + i * 12;
-            dataView.setInt32(offset, child.currentOffset, true);
+            writeVarint(dataView, offset, child.currentOffset, true);
           });
         } else {
           const offset = currentOffset;
           const child = keyWriterGroup;
-          dataView.setInt32(offset, child.currentOffset, true);
+          writeVarint(dataView, offset, child.currentOffset, true);
         }
         if (valWriterGroup instanceof WriterGroup) {
           valWriterGroup.writers.forEach((child, i) => {
             const offset = currentOffset + i * 12;
-            dataView.setInt32(offset + 4, child.currentOffset, true);
-            dataView.setInt32(offset + 8, child.currentSource.length, true);
+            writeVarint(dataView, offset + 4, child.currentOffset, true);
+            writeVarint(dataView, offset + 8, child.currentSource.length);
           });
         } else {
           const offset = currentOffset;
           const child = valWriterGroup;
-          dataView.setInt32(offset + 4, child.currentOffset, true);
-          dataView.setInt32(offset + 8, child.currentSource.length, true);
+          writeVarint(dataView, offset + 4, child.currentOffset, true);
+          writeVarint(dataView, offset + 8, child.currentSource.length);
         }
       } else if (this.isOptional()) {
         const bitmaskWriter: ReturnType<typeof createBitmaskWriter> = args[0];
@@ -277,8 +281,8 @@ export function createEncoder(schema: Schema) {
           bitmask!,
           currentSource.length
         );
-        dataView.setInt32(currentOffset, bitmaskOffset, true);
-        dataView.setInt32(currentOffset + 4, valWriter.currentOffset, true);
+        writeVarint(dataView, currentOffset, bitmaskOffset, true);
+        writeVarint(dataView, currentOffset + 4, valWriter.currentOffset, true);
       } else if (this.isOneOf()) {
         const bitmaskWriter: ReturnType<typeof createBitmaskWriter> = args[0];
         const bitmaskOffset = bitmaskWriter.write(
@@ -286,10 +290,10 @@ export function createEncoder(schema: Schema) {
           currentSource.length,
           branches.length
         );
-        dataView.setInt32(currentOffset, bitmaskOffset, true);
+        writeVarint(dataView, currentOffset, bitmaskOffset, true);
         (branches as Writer[]).forEach((valWriter, i) => {
           const offset = currentOffset + 4 + i * 4;
-          dataView.setInt32(offset, valWriter.currentOffset, true);
+          writeVarint(dataView, offset, valWriter.currentOffset, true);
         });
       } else if (this.isRef()) {
         currentSource.forEach((value, i) => {
@@ -299,8 +303,8 @@ export function createEncoder(schema: Schema) {
           }
           const [writer, index] = ref;
           const offset = currentOffset + i * 8;
-          dataView.setInt32(offset, writer.currentOffset, true);
-          dataView.setInt32(offset + 4, index, true);
+          writeVarint(dataView, offset, writer.currentOffset, true);
+          writeVarint(dataView, offset + 4, index, true);
         });
       } else if (this.isLink()) {
         currentSource.forEach((_, i) => {
@@ -358,7 +362,8 @@ export function createEncoder(schema: Schema) {
   const references = new Map<any, [Writer, number]>();
 
   return function encode(data: any, rootType: string) {
-    const orderedWriters: Record<string, Writer[]> = {};
+    references.clear();
+    const groupedWriters: Record<string, Writer[]> = {};
     const stack: Writer[] = [];
     const root = new Writer(rootType, [data]);
     stack.push(root);
@@ -366,16 +371,27 @@ export function createEncoder(schema: Schema) {
     while (stack.length > 0) {
       const writer = stack.pop()!;
       const { typeName } = writer;
-      orderedWriters[typeName] = orderedWriters[typeName] || [];
-      orderedWriters[typeName].push(writer);
+      groupedWriters[typeName] = groupedWriters[typeName] ?? [];
+      groupedWriters[typeName].push(writer);
       const children = writer.spawn();
       for (let i = children.length - 1; i >= 0; i--) {
         stack.push(children[i]);
       }
     }
 
-    let offset = 0;
-    for (const writers of Object.values(orderedWriters)) {
+    let offset = 1;
+    const sortedWriters = Object.values(groupedWriters).sort((a, b) => {
+      const aWriter = a[0];
+      const bWriter = b[0];
+      if (!aWriter.isPrimitive() && bWriter.isPrimitive()) return -1;
+      if (!aWriter.isPrimitive() && !bWriter.isPrimitive()) return 0;
+      if (aWriter.isPrimitive() && !bWriter.isPrimitive()) return 1;
+      return (
+        (bWriter.currentType as SchemaPrimitiveType).size -
+        (aWriter.currentType as SchemaPrimitiveType).size
+      );
+    });
+    for (const writers of sortedWriters) {
       for (const writer of writers) {
         offset = writer.allocate(offset);
       }
@@ -385,13 +401,13 @@ export function createEncoder(schema: Schema) {
     const dv = new DataView(buffer);
 
     const stringWriter = createStringWriter(offset);
-    for (const writer of orderedWriters.String) {
+    for (const writer of groupedWriters.String) {
       writer.write(dv, stringWriter);
     }
     const stringBuffer = stringWriter.export();
 
     const bitmaskWriter = createBitmaskWriter(offset + stringBuffer.length);
-    for (const [typeName, writers] of Object.entries(orderedWriters)) {
+    for (const [typeName, writers] of Object.entries(groupedWriters)) {
       if (typeName === 'String') continue;
       for (const writer of writers) {
         writer.write(dv, bitmaskWriter);
@@ -407,5 +423,5 @@ export function createEncoder(schema: Schema) {
     combined.set(bitmaskBuffer, buffer.byteLength + stringBuffer.length);
 
     return combined;
-  }
+  };
 }
