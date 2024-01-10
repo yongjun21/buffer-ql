@@ -126,7 +126,7 @@ import SCHEMA from './schema.js';
 
 const Reader = createReader(buffer, SCHEMA);
 
-const reader = new Reader('#', 0);
+const reader = new Reader('#', 1);
 ```
 
 ### Traverse data using `.get(key)`

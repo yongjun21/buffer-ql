@@ -1,4 +1,4 @@
-import math
+from types import SimpleNamespace
 from ..helpers.bitmask import (
     encode_bitmask,
     encode_one_of,
@@ -7,11 +7,9 @@ from ..helpers.bitmask import (
     one_of_to_index,
     backward_map_one_of
 )
-from ..helpers.io import write_varint, Data_Tape
+from ..helpers.io import size_varint, write_varint, Data_Tape
 
 from ..schema.base import encode_int32
-
-MAX_INDEX = pow(2, 32) - 1
 
 
 def create_encoder(schema):
@@ -23,6 +21,8 @@ def create_encoder(schema):
             self.current_offset = -1
             self.bitmask = None
             self.branches = []
+            self.allocated = SimpleNamespace(
+                index_size=0, length_size=0, unit_size=0)
 
             if "ref" in self.current_type and not isinstance(self, WriterGroup):
                 for i, value in enumerate(source):
@@ -142,57 +142,60 @@ def create_encoder(schema):
             self.branches = next_branches
             return next_branches
 
-        def allocate(self, offset, db):
+        def allocate(self, alloc, db):
             if self.is_null():
-                return offset
+                return
 
             current_type = self.current_type
             current_source = self.current_source
             bitmask = self.bitmask
+            allocated = self.allocated
+
+            allocated.index_size = alloc.index_size
+            allocated.length_size = alloc.length_size
+            allocated.unit_size = alloc.unit_size
+            alloc.max_length = max(alloc.max_length, len(current_source))
 
             if self.is_primitive():
                 size = current_type["size"]
-                if type(size) == int:
-                    offset = math.ceil(
-                        offset / current_type["size"]) * current_type["size"]
-
-            self.current_offset = offset
-
-            if self.is_primitive():
-                _size = current_type["size"]
-                size = _size if type(_size) == int else 4
-                if callable(_size):
+                if callable(size):
                     for value in current_source:
-                        _size(value, db)
-                return offset + size * len(current_source)
-
-            if self.is_ref() or self.is_link():
-                return offset + 8 * len(current_source)
-
-            if self.is_array():
-                return offset + 8 * len(current_source)
-
-            if self.is_map():
-                return offset + 12 * len(current_source)
-
-            if self.is_tuple() or self.is_named_tuple():
+                        size(value, db)
+                    alloc.index_size += len(current_source)
+                else:
+                    alloc.unit_size += size * len(current_source)
+            elif self.is_tuple() or self.is_named_tuple():
                 children = current_type["children"]
-                return offset + 4 * len(children)
-
-            if self.is_optional():
+                alloc.index_size += len(children)
+            elif self.is_array():
+                alloc.index_size += len(current_source)
+                alloc.length_size += len(current_source)
+            elif self.is_map():
+                alloc.index_size += 2 * len(current_source)
+                alloc.length_size += len(current_source)
+            elif self.is_ref():
+                alloc.index_size += len(current_source)
+                alloc.length_size += len(current_source)
+            elif self.is_link():
+                alloc.unit_size += 8 * len(current_source)
+            elif self.is_optional():
                 db.put(encode_bitmask(bitmask, len(current_source)), id(bitmask))
-                return offset + 4 + 4
-
-            if self.is_one_of():
+                alloc.index_size += 2
+            elif self.is_one_of():
                 children = current_type["children"]
                 db.put(encode_one_of(bitmask, len(
                     current_source), len(children)), id(bitmask))
-                return offset + 4 + 4 * len(children)
+                alloc.index_size += len(children) + 1
+            else:
+                raise TypeError(
+                    f"Allocation not implemented for {current_type['type']}")
 
-            raise TypeError(
-                f"Allocation not implemented for {current_type['type']}")
+        def position(self, n, m, adj):
+            alloc = self.allocated
+            self.current_offset = alloc.index_size * n + \
+                alloc.length_size * m + alloc.unit_size + adj
 
-        def write(self, dataView, db):
+        def write(self, dataView, db, index_size, length_size):
             if self.is_null():
                 return
             current_offset = self.current_offset
@@ -203,37 +206,39 @@ def create_encoder(schema):
 
             if self.is_primitive():
                 _size, encode = current_type["size"], current_type["encode"]
-                size = _size if type(_size) == int else 4
+                size = _size if type(_size) == int else index_size
                 for i, value in enumerate(current_source):
                     offset = current_offset + i * size
                     encode(dataView, offset, value, db)
 
             elif self.is_tuple() or self.is_named_tuple():
                 for i, branch in enumerate(branches):
-                    offset = current_offset + i * 4
+                    offset = current_offset + i * index_size
                     write_varint(dataView, offset, branch.current_offset, True)
 
             elif self.is_array():
                 val_writer_group = branches[0]
                 if isinstance(val_writer_group, WriterGroup):
                     for i, child in enumerate(val_writer_group.writers):
-                        offset = current_offset + i * 8
+                        offset = current_offset + i * \
+                            (index_size + length_size)
                         write_varint(dataView, offset,
                                      child.current_offset, True)
-                        write_varint(dataView, offset + 4,
+                        write_varint(dataView, offset + index_size,
                                      len(child.current_source))
                 else:
                     offset = current_offset
                     child = val_writer_group
                     write_varint(dataView, offset, child.current_offset, True)
-                    write_varint(dataView, offset + 4,
+                    write_varint(dataView, offset + index_size,
                                  len(child.current_source))
 
             elif self.is_map():
                 key_writer_group, val_writer_group = branches
                 if isinstance(key_writer_group, WriterGroup):
                     for i, child in enumerate(key_writer_group.writers):
-                        offset = current_offset + i * 12
+                        offset = current_offset + i * \
+                            (2 * index_size + length_size)
                         write_varint(dataView, offset,
                                      child.current_offset, True)
                 else:
@@ -243,29 +248,30 @@ def create_encoder(schema):
 
                 if isinstance(val_writer_group, WriterGroup):
                     for i, child in enumerate(val_writer_group.writers):
-                        offset = current_offset + i * 12
-                        write_varint(dataView, offset + 4,
+                        offset = current_offset + i * \
+                            (2 * index_size + length_size)
+                        write_varint(dataView, offset + index_size,
                                      child.current_offset, True)
-                        write_varint(dataView, offset + 8,
+                        write_varint(dataView, offset + 2 * index_size,
                                      len(child.current_source))
                 else:
                     offset = current_offset
                     child = val_writer_group
-                    write_varint(dataView, offset + 4,
+                    write_varint(dataView, offset + index_size,
                                  child.current_offset, True)
-                    write_varint(dataView, offset + 8,
+                    write_varint(dataView, offset + 2 * index_size,
                                  len(child.current_source))
 
             elif self.is_optional():
                 val_writer = branches[0]
                 Data_Tape.write(dataView, current_offset, id(bitmask), db)
                 write_varint(dataView, current_offset +
-                             4, val_writer.current_offset, True)
+                             index_size, val_writer.current_offset, True)
 
             elif self.is_one_of():
                 Data_Tape.write(dataView, current_offset, id(bitmask), db)
                 for i, val_writer in enumerate(branches):
-                    offset = current_offset + 4 + i * 4
+                    offset = current_offset + index_size * (i + 1)
                     write_varint(dataView, offset,
                                  val_writer.current_offset, True)
 
@@ -275,9 +281,9 @@ def create_encoder(schema):
                     if not ref:
                         raise ValueError("Reference object outside of scope")
                     writer, index = ref
-                    offset = current_offset + i * 8
+                    offset = current_offset + i * (index_size + length_size)
                     write_varint(dataView, offset, writer.current_offset, True)
-                    write_varint(dataView, offset + 4, index, True)
+                    write_varint(dataView, offset + index_size, index, True)
 
             elif self.is_link():
                 for i, _ in enumerate(current_source):
@@ -290,6 +296,7 @@ def create_encoder(schema):
             ref = writers[0]
             super().__init__(ref.type_name, ref.current_source)
             self.writers = writers
+            self.allocated = ref.allocated
 
         def spawn(self):
             _next_branches = []
@@ -307,14 +314,17 @@ def create_encoder(schema):
             self.branches = next_branches
             return next_branches
 
-        def allocate(self, offset, db):
+        def allocate(self, alloc, db):
             for writer in self.writers:
-                offset = writer.allocate(offset, db)
-            return offset
+                writer.allocate(alloc, db)
 
-        def write(self, dataView, db):
+        def position(self, n, m, adj):
             for writer in self.writers:
-                writer.write(dataView, db)
+                writer.position(n, m, adj)
+
+        def write(self, dataView, db, index_size, length_size):
+            for writer in self.writers:
+                writer.write(dataView, db, index_size, length_size)
 
     references = {}
 
@@ -334,28 +344,64 @@ def create_encoder(schema):
             for i in range(len(children) - 1, -1, -1):
                 stack.append(children[i])
 
-        offset = 1
-
-        db = Data_Tape()
-
         def sort_key(writers):
             writer_type = writers[0].current_type
             size = writer_type.get("size", None)
-            return size if type(size) == int else MAX_INDEX
+            return size if type(size) == int else 0
         sorted_writers = sorted(grouped_writers.values(),
-                                key=sort_key, reverse=True)
+                                key=sort_key)
+
+        alloc = SimpleNamespace(index_size=0, length_size=0,
+                                unit_size=1, max_length=0)
+        db = Data_Tape()
 
         for writers in sorted_writers:
             for writer in writers:
-                offset = writer.allocate(offset, db)
+                writer.allocate(alloc, db)
 
+        paddings = set()
+        for writers in sorted_writers:
+            writer_type = writers[0].current_type
+            if type(writer_type.get("size", None)) == int:
+                paddings.add(writer_type["size"] - 1)
+
+        exported_db = db.export()
+        n, m = optimizeAlloc(alloc, paddings, len(exported_db))
+
+        sum_padding = 0
+        for writers in sorted_writers:
+            writer_type = writers[0].current_type
+            if type(writer_type.get("size", None)) == int:
+                _alloc = writers[0].allocated
+                _offset = _alloc.index_size * n + _alloc.length_size * \
+                    m + _alloc.unit_size + sum_padding
+                if _offset % writer_type["size"] != 0:
+                    sum_padding += writer_type["size"] - \
+                        (_offset % writer_type["size"])
+            for writer in writers:
+                writer.position(n, m, sum_padding)
+
+        offset = alloc.index_size * n + alloc.length_size * \
+            m + alloc.unit_size + sum_padding
         buffer = bytearray(offset)
         db.shift(offset)
 
-        for writers in grouped_writers.values():
+        buffer[0] = (n << 4) | m
+        for writers in sorted_writers:
             for writer in writers:
-                writer.write(buffer, db)
+                writer.write(buffer, db, n, m)
 
-        return bytearray(buffer + db.export())
+        return bytearray(buffer + exported_db)
 
     return encode
+
+
+def optimizeAlloc(alloc, paddings, additional):
+    m = size_varint(alloc.max_length)
+    sum_padding = sum(paddings)
+    for n in range(1, 5):
+        total_size = alloc.index_size * n + alloc.length_size * \
+            m + alloc.unit_size + sum_padding + additional
+        if size_varint(total_size, True) <= n:
+            return [n, m]
+    raise IndexError("Index overflow, split data into smaller chunks")

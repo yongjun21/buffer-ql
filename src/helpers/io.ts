@@ -32,6 +32,18 @@ export function writeVarint(
   dv.setUint8(offset, value);
 }
 
+export function sizeVarint(value: number, signed = false) {
+  if (signed) {
+    value = (value << 1) ^ (value >> 63);
+  }
+  let size = 1;
+  while (value > 127) {
+    value >>>= 7;
+    size++;
+  }
+  return size;
+}
+
 export function readString(dv: DataView, offset: number) {
   const encoded = DataTape.read(dv, offset);
   return textDecoder.decode(encoded);
@@ -88,7 +100,7 @@ export class DataTape {
   }
 
   export() {
-    return this.buffer.slice(0, this.offset);
+    return this.buffer.subarray(0, this.offset);
   }
 }
 

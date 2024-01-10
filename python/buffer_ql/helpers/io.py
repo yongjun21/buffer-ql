@@ -8,6 +8,16 @@ def write_varint(dv, offset, value, signed=False):
     dv[offset] = value
 
 
+def size_varint(value, signed=False):
+    if signed:
+        value = (value << 1) ^ (value >> 63)
+    size = 1
+    while value > 127:
+        size += 1
+        value >>= 7
+    return size
+
+
 def write_prefixed_varint(buffer, offset, value):
     while value > 127:
         buffer.append((value & 127) | 128)
