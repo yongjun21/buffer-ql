@@ -1,17 +1,17 @@
 import math
 from ..helpers.bitmask import (
+    encode_bitmask,
+    encode_one_of,
     bit_to_index,
     backward_map_indexes,
     one_of_to_index,
     backward_map_one_of
 )
-from ..helpers.io import (
-    create_string_writer,
-    create_bitmask_writer,
-    write_varint
-)
+from ..helpers.io import write_varint, Data_Tape
 
 from ..schema.base import encode_int32
+
+MAX_INDEX = pow(2, 32) - 1
 
 
 def create_encoder(schema):
@@ -142,21 +142,28 @@ def create_encoder(schema):
             self.branches = next_branches
             return next_branches
 
-        def allocate(self, offset):
+        def allocate(self, offset, db):
             if self.is_null():
                 return offset
 
             current_type = self.current_type
             current_source = self.current_source
+            bitmask = self.bitmask
 
             if self.is_primitive():
-                offset = math.ceil(
-                    offset / current_type["size"]) * current_type["size"]
+                size = current_type["size"]
+                if type(size) == int:
+                    offset = math.ceil(
+                        offset / current_type["size"]) * current_type["size"]
 
             self.current_offset = offset
 
             if self.is_primitive():
-                size = current_type["size"]
+                _size = current_type["size"]
+                size = _size if type(_size) == int else 4
+                if callable(_size):
+                    for value in current_source:
+                        _size(value, db)
                 return offset + size * len(current_source)
 
             if self.is_ref() or self.is_link():
@@ -173,16 +180,19 @@ def create_encoder(schema):
                 return offset + 4 * len(children)
 
             if self.is_optional():
+                db.put(encode_bitmask(bitmask, len(current_source)), id(bitmask))
                 return offset + 4 + 4
 
             if self.is_one_of():
                 children = current_type["children"]
+                db.put(encode_one_of(bitmask, len(
+                    current_source), len(children)), id(bitmask))
                 return offset + 4 + 4 * len(children)
 
             raise TypeError(
                 f"Allocation not implemented for {current_type['type']}")
 
-        def write(self, dataView, *args):
+        def write(self, dataView, db):
             if self.is_null():
                 return
             current_offset = self.current_offset
@@ -192,10 +202,11 @@ def create_encoder(schema):
             bitmask = self.bitmask
 
             if self.is_primitive():
-                size, encode = current_type["size"], current_type["encode"]
+                _size, encode = current_type["size"], current_type["encode"]
+                size = _size if type(_size) == int else 4
                 for i, value in enumerate(current_source):
                     offset = current_offset + i * size
-                    encode(dataView, offset, value, *args)
+                    encode(dataView, offset, value, db)
 
             elif self.is_tuple() or self.is_named_tuple():
                 for i, branch in enumerate(branches):
@@ -246,19 +257,13 @@ def create_encoder(schema):
                                  len(child.current_source))
 
             elif self.is_optional():
-                bitmask_writer = args[0]
                 val_writer = branches[0]
-                bitmask_offset = bitmask_writer.write(
-                    bitmask, len(current_source))
-                write_varint(dataView, current_offset, bitmask_offset, True)
+                Data_Tape.write(dataView, current_offset, id(bitmask), db)
                 write_varint(dataView, current_offset +
                              4, val_writer.current_offset, True)
 
             elif self.is_one_of():
-                bitmask_writer = args[0]
-                bitmask_offset = bitmask_writer.write(
-                    bitmask, len(current_source), len(branches))
-                write_varint(dataView, current_offset, bitmask_offset, True)
+                Data_Tape.write(dataView, current_offset, id(bitmask), db)
                 for i, val_writer in enumerate(branches):
                     offset = current_offset + 4 + i * 4
                     write_varint(dataView, offset,
@@ -302,15 +307,14 @@ def create_encoder(schema):
             self.branches = next_branches
             return next_branches
 
-        def allocate(self, offset):
-            _offset = offset
+        def allocate(self, offset, db):
             for writer in self.writers:
-                _offset = writer.allocate(_offset)
-            return _offset
+                offset = writer.allocate(offset, db)
+            return offset
 
-        def write(self, dataView, *args):
+        def write(self, dataView, db):
             for writer in self.writers:
-                writer.write(dataView, *args)
+                writer.write(dataView, db)
 
     references = {}
 
@@ -331,30 +335,27 @@ def create_encoder(schema):
                 stack.append(children[i])
 
         offset = 1
-        sorted_writers = sorted(grouped_writers.values(
-        ), key=lambda writers: -writers[0].current_type["size"] if writers[0].is_primitive() else -pow(2, 32))
+
+        db = Data_Tape()
+
+        def sort_key(writers):
+            writer_type = writers[0].current_type
+            size = writer_type.get("size", None)
+            return size if type(size) == int else MAX_INDEX
+        sorted_writers = sorted(grouped_writers.values(),
+                                key=sort_key, reverse=True)
 
         for writers in sorted_writers:
             for writer in writers:
-                offset = writer.allocate(offset)
+                offset = writer.allocate(offset, db)
 
         buffer = bytearray(offset)
+        db.shift(offset)
 
-        string_writer = create_string_writer(offset)
-        for writer in grouped_writers["String"]:
-            writer.write(buffer, string_writer)
-        string_buffer = string_writer.export()
-
-        bitmask_writer = create_bitmask_writer(offset + len(string_buffer))
-        for type_name, writers in grouped_writers.items():
-            if type_name == "String":
-                continue
+        for writers in grouped_writers.values():
             for writer in writers:
-                writer.write(buffer, bitmask_writer)
-        bitmask_buffer = bitmask_writer.export()
+                writer.write(buffer, db)
 
-        return bytearray(
-            buffer + string_buffer + bitmask_buffer
-        )
+        return bytearray(buffer + db.export())
 
     return encode

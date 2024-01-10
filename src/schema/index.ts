@@ -8,17 +8,19 @@ import type {
   SchemaTypeModifierName,
   SchemaCompoundTypeExpression
 } from './compound.js';
+import type { DataTape } from '../helpers/io.js';
 
 export type SchemaTypeDecoder<T> = (dv: DataView, offset: number) => T;
 export type SchemaTypeEncoder<T> = (
   dv: DataView,
   offset: number,
   value: T,
-  ...args: any[]
+  db: DataTape
 ) => void;
+export type SchemaTypeSizer<T> = (value: T, db: DataTape) => number;
 export type SchemaTypeChecker = (value: any) => boolean;
 export interface SchemaPrimitiveType {
-  size: number;
+  size: number | SchemaTypeSizer<any>;
   decode: SchemaTypeDecoder<any>;
   encode: SchemaTypeEncoder<any>;
 }
@@ -99,7 +101,7 @@ export function extendSchema<
     } else if (Array.isArray(value!)) {
       const record: SchemaType = {
         type: 'Tuple',
-        children: [],
+        children: []
       };
       addRecords({ [label]: record });
       value.forEach((exp, i) => {
@@ -112,7 +114,7 @@ export function extendSchema<
         type: 'NamedTuple',
         children: [],
         keys: [],
-        indexes: {},
+        indexes: {}
       };
       addRecords({ [label]: record });
       Object.entries<string>(value).forEach(([key, exp], i) => {
@@ -183,7 +185,11 @@ function validateSchema(schema: Schema) {
     }
 
     if (record.type === 'Ref') {
-      if (!['Tuple', 'NamedTuple', 'Array', 'Map'].includes(schema[record.children[0]].type)) {
+      if (
+        !['Tuple', 'NamedTuple', 'Array', 'Map'].includes(
+          schema[record.children[0]].type
+        )
+      ) {
         throw new TypeError(
           `Modifier type Ref should be used only on Tuple, NamedTuple, Array or Map`
         );

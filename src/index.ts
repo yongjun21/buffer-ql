@@ -26,6 +26,8 @@ export type { NestedLazyArray } from './core/LazyArray.js';
 
 export { extendSchema } from './schema/index.js';
 
+export { DataTape } from './helpers/io.js';
+
 export {
   encodeBitmask,
   decodeBitmask,

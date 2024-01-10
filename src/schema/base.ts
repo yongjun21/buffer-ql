@@ -1,4 +1,8 @@
-import { readString, StringWriter, writeVarint } from '../helpers/io.js';
+import {
+  readString,
+  sizeString,
+  DataTape
+} from '../helpers/io.js';
 import { typed } from '../helpers/common.js';
 
 import type {
@@ -86,13 +90,9 @@ export const SCHEMA_BASE_PRIMITIVE_TYPES = [
   // strings are just pointer to an UTF8 array
   {
     name: 'String',
-    size: 4,
+    size: sizeString,
     decode: typed<Decoder<string>>(readString),
-    encode: typed<Encoder<string>>(
-      (dv, offset, value, stringWriter: StringWriter) => {
-        writeVarint(dv, offset, stringWriter.write(value), true);
-      }
-    ),
+    encode: typed<Encoder<string>>(DataTape.write),
     check: isString
   },
   // 2 * Float32
@@ -107,9 +107,7 @@ export const SCHEMA_BASE_PRIMITIVE_TYPES = [
     }),
     check: typed<Checker>(
       value =>
-        Array.isArray(value) &&
-        value.length === 2 &&
-        value.every(isNumber)
+        Array.isArray(value) && value.length === 2 && value.every(isNumber)
     )
   },
   // 3 * Float32
@@ -124,9 +122,7 @@ export const SCHEMA_BASE_PRIMITIVE_TYPES = [
     }),
     check: typed<Checker>(
       value =>
-        Array.isArray(value) &&
-        value.length === 3 &&
-        value.every(isNumber)
+        Array.isArray(value) && value.length === 3 && value.every(isNumber)
     )
   },
   // 4 * Float32
@@ -141,9 +137,7 @@ export const SCHEMA_BASE_PRIMITIVE_TYPES = [
     }),
     check: typed<Checker>(
       value =>
-        Array.isArray(value) &&
-        value.length === 4 &&
-        value.every(isNumber)
+        Array.isArray(value) && value.length === 4 && value.every(isNumber)
     )
   },
   // 9 * Float32
@@ -158,9 +152,7 @@ export const SCHEMA_BASE_PRIMITIVE_TYPES = [
     }),
     check: typed<Checker>(
       value =>
-        Array.isArray(value) &&
-        value.length === 9 &&
-        value.every(isNumber)
+        Array.isArray(value) && value.length === 9 && value.every(isNumber)
     )
   },
   // 16 * Float32
@@ -175,9 +167,7 @@ export const SCHEMA_BASE_PRIMITIVE_TYPES = [
     }),
     check: typed<Checker>(
       value =>
-        Array.isArray(value) &&
-        value.length === 16 &&
-        value.every(isNumber)
+        Array.isArray(value) && value.length === 16 && value.every(isNumber)
     )
   }
 ] as const;
@@ -225,14 +215,14 @@ function transformFlattenedTupleList(arr: ArrayLike<number>, size: number) {
     get(target, prop) {
       if (typeof prop === 'string') {
         if (prop === 'length') return target.length / size;
-        if (/^[0-9]+$/.test(prop)) {
-          const i = Number(prop);
-          const value = [];
-          for (let j = 0; j < size; j++) {
-            value.push(target[i * size + j]);
-          }
-          return value;
+        const i = Number(prop);
+        if (!isNaN(i)) return undefined;
+        if (i < 0 || i >= target.length / size) return undefined;
+        const value = [];
+        for (let j = 0; j < size; j++) {
+          value.push(target[i * size + j]);
         }
+        return value;
       }
       return Reflect.get(target, prop);
     }

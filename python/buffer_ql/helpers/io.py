@@ -1,8 +1,3 @@
-from collections import namedtuple
-from .bitmask import encode_bitmask
-
-Writer = namedtuple("Writer", ["write", "export"])
-
 def write_varint(dv, offset, value, signed=False):
     if signed:
         value = (value << 1) ^ (value >> 63)
@@ -23,40 +18,38 @@ def write_prefixed_varint(buffer, offset, value):
     return offset
 
 
-def create_string_writer(start_offset=0):
-    buffer = bytearray()
-    offset = 0
-
-    def write(input_str):
-        nonlocal offset
-        encoded = input_str.encode('utf-8')
-        curr_offset = offset
-        encoded_offset = write_prefixed_varint(buffer, offset, len(encoded))
-        buffer.extend(encoded)
-        offset = encoded_offset + len(encoded)
-        return start_offset + curr_offset
-
-    def export():
-        return buffer
-
-    return Writer(write, export)
+def size_string(value, db):
+    encoded = value.encode('utf-8')
+    return db.put(encoded, value)
 
 
-def create_bitmask_writer(start_offset=0):
-    buffer = bytearray()
-    offset = 0
+class Data_Tape:
+    def __init__(self):
+        self.buffer = bytearray()
+        self.offset = 0
+        self.offset_delta = 0
+        self.index = {}
 
-    def write(bitmask, max_index, no_of_classes=1):
-        nonlocal offset
-        n = max_index * no_of_classes + no_of_classes - 1
-        encoded = encode_bitmask(bitmask, n)
-        curr_offset = offset
-        encoded_offset = write_prefixed_varint(buffer, offset, len(encoded))    
-        buffer.extend(encoded)
-        offset = encoded_offset + len(encoded)
-        return start_offset + curr_offset
+    @staticmethod
+    def write(dv, offset, value, db):
+        return write_varint(dv, offset, db.get(value), True)
+    
+    def get(self, key):
+        i = self.index.get(key, None)
+        return -1 if i is None else i + self.offset_delta
+    
+    def put(self, value, key):
+        if key in self.index:
+            return 0
+        self.index[key] = self.offset
+        curr_offset = self.offset
+        next_offset = write_prefixed_varint(self.buffer, self.offset, len(value)) + len(value)
+        self.buffer.extend(value)
+        self.offset = next_offset
+        return next_offset - curr_offset
+    
+    def shift(self, to):
+        self.offset_delta = to
 
-    def export():
-        return buffer
-
-    return Writer(write, export)
+    def export(self):
+        return self.buffer

@@ -1,14 +1,12 @@
 import {
+  encodeBitmask,
+  encodeOneOf,
   bitToIndex,
   oneOfToIndex,
   backwardMapIndexes,
   backwardMapOneOf
 } from '../helpers/bitmask.js';
-import {
-  createStringWriter,
-  createBitmaskWriter,
-  writeVarint
-} from '../helpers/io.js';
+import { writeVarint, DataTape } from '../helpers/io.js';
 
 import { ValueError } from '../helpers/error.js';
 
@@ -18,6 +16,8 @@ import type {
   SchemaCompoundType,
   SchemaNamedTupleType
 } from '../schema/index.js';
+
+const MAX_INDEX = 2 ** 32 - 1;
 
 export function createEncoder(schema: Schema) {
   class Writer {
@@ -180,21 +180,27 @@ export function createEncoder(schema: Schema) {
       return nextBranches;
     }
 
-    allocate(offset: number) {
+    allocate(offset: number, db: DataTape) {
       if (this.isNull()) return offset;
 
-      const { currentType, currentSource } = this;
+      const { currentType, currentSource, bitmask } = this;
 
       if (this.isPrimitive()) {
         // align offset to multiples of size
         const { size } = currentType as SchemaPrimitiveType;
-        offset = Math.ceil(offset / size) * size;
+        if (typeof size === 'number') {
+          offset = Math.ceil(offset / size) * size;
+        }
       }
 
       this.currentOffset = offset;
 
       if (this.isPrimitive()) {
-        const { size } = currentType as SchemaPrimitiveType;
+        const { size: _size } = currentType as SchemaPrimitiveType;
+        const size = typeof _size === 'number' ? _size : 4;
+        if (typeof _size === 'function') {
+          currentSource.forEach(value => _size(value, db));
+        }
         return offset + size * currentSource.length;
       }
 
@@ -210,26 +216,34 @@ export function createEncoder(schema: Schema) {
         return offset + 4 * children.length;
       }
 
-      if (this.isOptional()) return offset + 4 + 4;
+      if (this.isOptional()) {
+        db.put(encodeBitmask(bitmask!, currentSource.length), bitmask!);
+        return offset + 4 + 4;
+      }
 
       if (this.isOneOf()) {
         const { children } = currentType as SchemaCompoundType<'OneOf'>;
+        db.put(
+          encodeOneOf(bitmask!, currentSource.length, children.length),
+          bitmask!
+        );
         return offset + 4 + 4 * children.length;
       }
 
       throw new TypeError(`Allocation not implemented for ${currentType.type}`);
     }
 
-    write(dataView: DataView, ...args: any[]) {
+    write(dataView: DataView, db: DataTape) {
       if (this.isNull()) return;
       const { currentOffset, currentType, currentSource, branches, bitmask } =
         this;
 
       if (this.isPrimitive()) {
-        const { size, encode } = currentType as SchemaPrimitiveType;
+        const { size: _size, encode } = currentType as SchemaPrimitiveType;
+        const size = typeof _size === 'number' ? _size : 4;
         currentSource.forEach((value, i) => {
           const offset = currentOffset + i * size;
-          encode(dataView, offset, value, ...args);
+          encode(dataView, offset, value, db);
         });
       } else if (this.isTuple() || this.isNamedTuple()) {
         branches.forEach((branch, i) => {
@@ -275,22 +289,11 @@ export function createEncoder(schema: Schema) {
           writeVarint(dataView, offset + 8, child.currentSource.length);
         }
       } else if (this.isOptional()) {
-        const bitmaskWriter: ReturnType<typeof createBitmaskWriter> = args[0];
         const [valWriter] = branches as [Writer];
-        const bitmaskOffset = bitmaskWriter.write(
-          bitmask!,
-          currentSource.length
-        );
-        writeVarint(dataView, currentOffset, bitmaskOffset, true);
+        DataTape.write(dataView, currentOffset, bitmask!, db);
         writeVarint(dataView, currentOffset + 4, valWriter.currentOffset, true);
       } else if (this.isOneOf()) {
-        const bitmaskWriter: ReturnType<typeof createBitmaskWriter> = args[0];
-        const bitmaskOffset = bitmaskWriter.write(
-          bitmask!,
-          currentSource.length,
-          branches.length
-        );
-        writeVarint(dataView, currentOffset, bitmaskOffset, true);
+        DataTape.write(dataView, currentOffset, bitmask!, db);
         (branches as Writer[]).forEach((valWriter, i) => {
           const offset = currentOffset + 4 + i * 4;
           writeVarint(dataView, offset, valWriter.currentOffset, true);
@@ -344,17 +347,16 @@ export function createEncoder(schema: Schema) {
       return nextBranches;
     }
 
-    allocate(offset: number) {
-      let _offset = offset;
+    allocate(offset: number, db: DataTape) {
       for (const writer of this.writers) {
-        _offset = writer.allocate(_offset);
+        offset = writer.allocate(offset, db);
       }
-      return _offset;
+      return offset;
     }
 
-    write(dataView: DataView, ...args: any[]) {
+    write(dataView: DataView, db: DataTape) {
       for (const writer of this.writers) {
-        writer.write(dataView, ...args);
+        writer.write(dataView, db);
       }
     }
   }
@@ -380,47 +382,39 @@ export function createEncoder(schema: Schema) {
     }
 
     let offset = 1;
+
+    const db = new DataTape();
+
     const sortedWriters = Object.values(groupedWriters).sort((a, b) => {
       const aWriter = a[0];
       const bWriter = b[0];
-      if (!aWriter.isPrimitive() && bWriter.isPrimitive()) return -1;
-      if (!aWriter.isPrimitive() && !bWriter.isPrimitive()) return 0;
-      if (aWriter.isPrimitive() && !bWriter.isPrimitive()) return 1;
-      return (
-        (bWriter.currentType as SchemaPrimitiveType).size -
-        (aWriter.currentType as SchemaPrimitiveType).size
-      );
+      const aType = aWriter.currentType as SchemaPrimitiveType;
+      const bType = bWriter.currentType as SchemaPrimitiveType;
+      const aSize = typeof aType.size === 'number' ? aType.size : MAX_INDEX;
+      const bSize = typeof bType.size === 'number' ? bType.size : MAX_INDEX;
+      return bSize - aSize;
     });
     for (const writers of sortedWriters) {
       for (const writer of writers) {
-        offset = writer.allocate(offset);
+        offset = writer.allocate(offset, db);
       }
     }
 
     const buffer = new ArrayBuffer(offset);
     const dv = new DataView(buffer);
+    db.shift(offset);
 
-    const stringWriter = createStringWriter(offset);
-    for (const writer of groupedWriters.String) {
-      writer.write(dv, stringWriter);
-    }
-    const stringBuffer = stringWriter.export();
-
-    const bitmaskWriter = createBitmaskWriter(offset + stringBuffer.length);
-    for (const [typeName, writers] of Object.entries(groupedWriters)) {
-      if (typeName === 'String') continue;
+    for (const writers of Object.values(groupedWriters)) {
       for (const writer of writers) {
-        writer.write(dv, bitmaskWriter);
+        writer.write(dv, db);
       }
     }
-    const bitmaskBuffer = bitmaskWriter.export();
 
-    const combined = new Uint8Array(
-      buffer.byteLength + stringBuffer.length + bitmaskBuffer.length
-    );
+    const exportedDb = db.export();
+
+    const combined = new Uint8Array(buffer.byteLength + exportedDb.length);
     combined.set(new Uint8Array(buffer), 0);
-    combined.set(stringBuffer, buffer.byteLength);
-    combined.set(bitmaskBuffer, buffer.byteLength + stringBuffer.length);
+    combined.set(exportedDb, buffer.byteLength);
 
     return combined;
   };

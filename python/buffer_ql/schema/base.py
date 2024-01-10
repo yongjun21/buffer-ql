@@ -1,5 +1,5 @@
 import struct
-from ..helpers.io import write_varint
+from ..helpers.io import size_string, Data_Tape
 
 
 def encode_uint8(dv, offset, value, *arg):
@@ -32,10 +32,6 @@ def encode_float32(dv, offset, value, *arg):
 
 def encode_float64(dv, offset, value, *arg):
     dv[offset: offset + 8] = struct.pack("d", value)
-
-
-def encode_string(dv, offset, value, string_writer):
-    write_varint(dv, offset, string_writer.write(value), True)
 
 
 def encode_vec(size):
@@ -124,8 +120,8 @@ SCHEMA_BASE_PRIMITIVE_TYPES = [
     },
     {
         "name": "String",
-        "size": 4,
-        "encode": encode_string,
+        "size": size_string,
+        "encode": Data_Tape.write,
         "check": is_string,
     },
     {

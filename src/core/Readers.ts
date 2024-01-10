@@ -10,7 +10,7 @@ import {
   forwardMapOneOf,
   forwardMapSingleOneOf
 } from '../helpers/bitmask.js';
-import { readBitmask, readString, readVarint } from '../helpers/io.js';
+import { readString, readVarint, DataTape } from '../helpers/io.js';
 
 import { TypeError, UsageError, InternalError } from '../helpers/error.js';
 
@@ -162,7 +162,8 @@ export class Reader<T extends boolean = Single> {
   private _primitiveValueAt(atIndex: number) {
     if (this.isUndefined(atIndex)) return;
     const { currentType, currentOffset, _dataView } = this;
-    const { size, decode } = currentType as SchemaPrimitiveType;
+    const { size: _size, decode } = currentType as SchemaPrimitiveType;
+    const size = typeof _size === 'number' ? _size : 4;
     return decode(_dataView, currentOffset + atIndex * size);
   }
 
@@ -334,7 +335,7 @@ export class Reader<T extends boolean = Single> {
 
       const nextOffset = readVarint(_dataView, currentOffset + 4, true);
       const bitmask = decodeBitmask(
-        readBitmask(_dataView, currentOffset),
+        DataTape.read(_dataView, currentOffset),
         currentLength
       );
       const nextIndex = this.singleValue()
@@ -531,6 +532,9 @@ export class Reader<T extends boolean = Single> {
     if (!this.isPrimitive()) {
       throw new UsageError('Calling dump on a non-primitive type');
     }
+    if (typeof (this.currentType as SchemaPrimitiveType).size !== 'number') {
+      throw new UsageError('Calling dump on a variable size primitive type');
+    }
     const [offset, length] = this._computeDump();
     return length > 0
       ? new TypedArray(
@@ -543,7 +547,8 @@ export class Reader<T extends boolean = Single> {
 
   protected _computeDump() {
     const { currentOffset, currentType, currentIndex, currentLength } = this;
-    const { size } = currentType as SchemaPrimitiveType;
+    const { size: _size } = currentType as SchemaPrimitiveType;
+    const size = _size as number;
 
     if (this.singleValue()) {
       const index = currentIndex as number;
@@ -683,7 +688,7 @@ export class BranchedReader<T extends boolean> extends Reader<T> {
     }
 
     const oneOfIndex = decodeOneOf(
-      readBitmask(_dataView, currentOffset),
+      DataTape.read(_dataView, currentOffset),
       currentLength,
       children.length
     );

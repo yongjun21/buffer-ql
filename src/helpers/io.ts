@@ -1,5 +1,4 @@
-import { encodeBitmask } from './bitmask.js';
-
+const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder();
 
 export function readVarint(dv: DataView, offset: number, signed = false) {
@@ -24,7 +23,7 @@ export function writeVarint(
   signed = false
 ) {
   if (signed) {
-    value = (value << 1) ^ (value >> 63)
+    value = (value << 1) ^ (value >> 63);
   }
   while (value > 127) {
     dv.setUint8(offset++, (value & 127) | 128);
@@ -34,67 +33,63 @@ export function writeVarint(
 }
 
 export function readString(dv: DataView, offset: number) {
-  const [_length, _offset] = readPrefixedVarint(dv, offset);
-  return textDecoder.decode(new Uint8Array(dv.buffer, _offset, _length));
+  const encoded = DataTape.read(dv, offset);
+  return textDecoder.decode(encoded);
 }
 
-export function readBitmask(dv: DataView, offset: number) {
-  const [_length, _offset] = readPrefixedVarint(dv, offset);
-  return new Uint8Array(dv.buffer, _offset, _length);
+export function sizeString(str: string, db: DataTape) {
+  const encoded = textEncoder.encode(str);
+  return db.put(encoded, str);
 }
 
-export function createStringWriter(startOffset = 0) {
-  const textEncoder = new TextEncoder();
-  let buffer = new Uint8Array(4); // reserve 4 bytes for varint prefix
-  let offset = 0;
+export class DataTape {
+  private buffer = new Uint8Array(4);
+  private offset = 0;
+  private offsetDelta = 0;
+  private index = new Map<any, number>();
 
-  return {
-    write(str: string) {
-      const encoded = textEncoder.encode(str);
-      const currOffset = offset;
-      const encodedOffset = writePrefixedVarint(buffer, offset, encoded.length);
-      const nextOffset = encodedOffset + encoded.length;
-      if (buffer.length < nextOffset + 4) {
-        const newBuffer = new Uint8Array(nextOffset * 2);
-        newBuffer.set(buffer);
-        buffer = newBuffer;
-      }
-      buffer.set(encoded, encodedOffset);
-      offset = nextOffset;
-      return startOffset + currOffset;
-    },
-    export() {
-      return buffer.slice(0, offset);
+  static read(dv: DataView, offset: number) {
+    const [_length, _offset] = readPrefixedVarint(dv, offset);
+    return new Uint8Array(dv.buffer, _offset, _length);
+  }
+
+  static write(
+    dv: DataView,
+    offset: number,
+    value: any,
+    db: DataTape
+  ) {
+    writeVarint(dv, offset, db.get(value), true);
+  }
+
+  get(key: any) {
+    const i = this.index.get(key);
+    return i == null ? -1 : i + this.offsetDelta;
+  }
+
+  put(value: Uint8Array, key: any) {
+    const { buffer, offset, index } = this;
+    if (index.has(key)) return 0;
+    index.set(key, offset);
+    const encodedOffset = writePrefixedVarint(buffer, offset, value.length);
+    const nextOffset = encodedOffset + value.length;
+    if (buffer.length < nextOffset + 4) {
+      const newBuffer = new Uint8Array(nextOffset * 2);
+      newBuffer.set(buffer);
+      this.buffer = newBuffer;
     }
-  };
-}
+    this.buffer.set(value, encodedOffset);
+    this.offset = nextOffset;
+    return nextOffset - offset;
+  }
 
-export type StringWriter = ReturnType<typeof createStringWriter>;
+  shift(to: number) {
+    this.offsetDelta = to;
+  }
 
-export function createBitmaskWriter(startOffset = 0) {
-  let buffer = new Uint8Array(4); // reserve 4 bytes for varint prefix
-  let offset = 0;
-
-  return {
-    write(bitmask: Iterable<number>, maxIndex: number, noOfClasses = 1) {
-      const n = maxIndex * noOfClasses + noOfClasses - 1;
-      const encoded = encodeBitmask(bitmask, n);
-      const currentOffset = offset;
-      const encodedOffset = writePrefixedVarint(buffer, offset, encoded.length);
-      const nextOffset = encodedOffset + encoded.length;
-      if (buffer.length < nextOffset + 4) {
-        const newBuffer = new Uint8Array(nextOffset * 2);
-        newBuffer.set(buffer);
-        buffer = newBuffer;
-      }
-      buffer.set(encoded, encodedOffset);
-      offset = nextOffset;
-      return startOffset + currentOffset;
-    },
-    export() {
-      return buffer.slice(0, offset);
-    }
-  };
+  export() {
+    return this.buffer.slice(0, this.offset);
+  }
 }
 
 function readPrefixedVarint(dv: DataView, offset: number) {
