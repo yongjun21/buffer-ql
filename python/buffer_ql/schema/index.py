@@ -43,7 +43,7 @@ def extend_schema(base_types, types, transforms={}, checks={}):
                 "indexes": {},
             }
             add_records({label: record})
-            for key, exp in value.items():
+            for key, exp in sorted(value.items(), key=lambda x: x[0]):
                 _label = f'{label}.{key}'
                 record["children"].append(_label)
                 record["keys"].append(key)

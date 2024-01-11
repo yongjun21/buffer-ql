@@ -117,13 +117,21 @@ export function extendSchema<
         indexes: {}
       };
       addRecords({ [label]: record });
-      Object.entries<string>(value).forEach(([key, exp], i) => {
-        const _label = `${label}.${key}`;
-        record.children.push(_label);
-        record.keys.push(key);
-        record.indexes[key] = i;
-        addRecords(parseExpression(_label, exp) as Record<string, SchemaType>);
-      });
+      Object.entries<string>(value)
+        .sort((a, b) => {
+          if (a[0] < b[0]) return -1;
+          if (a[0] > b[0]) return 1;
+          return 0;
+        })
+        .forEach(([key, exp], i) => {
+          const _label = `${label}.${key}`;
+          record.children.push(_label);
+          record.keys.push(key);
+          record.indexes[key] = i;
+          addRecords(
+            parseExpression(_label, exp) as Record<string, SchemaType>
+          );
+        });
     }
   }
 
