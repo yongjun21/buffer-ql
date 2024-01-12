@@ -391,7 +391,7 @@ def create_encoder(schema):
             for writer in writers:
                 writer.write(buffer, db, n, m)
 
-        return bytearray(buffer + exported_db)
+        return bytes(buffer + exported_db)
 
     return encode
 
