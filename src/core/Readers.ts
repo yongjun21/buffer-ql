@@ -162,7 +162,7 @@ export class Reader<T extends boolean = Single> {
   }
 
   private _primitiveValueAt(atIndex: number) {
-    if (this.isUndefined(atIndex)) return;
+    if (atIndex == null || this.isUndefined(atIndex)) return undefined;
     const {
       currentType,
       currentOffset,
@@ -177,6 +177,7 @@ export class Reader<T extends boolean = Single> {
     atIndex: number,
     refCache = createRefCache()
   ): U {
+    if (atIndex == null || this.isUndefined(atIndex)) return undefined as U;
     const root: U[] = [];
     const currentStack: ValueCallStack<Reader<boolean>> = [];
     if (atIndex === this.currentIndex) {
