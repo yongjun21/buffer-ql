@@ -566,6 +566,11 @@ export class Reader<T extends boolean = Single> {
       : new TypedArray(0);
   }
 
+  valueLength() {
+    if (typeof this.currentIndex === 'number') return -1;
+    return this.currentIndex.length;
+  }
+
   protected _computeDump() {
     const { currentOffset, currentType, currentIndex, currentLength } = this;
     const { size: _size } = currentType as SchemaPrimitiveType;
@@ -651,13 +656,17 @@ export class NestedReader extends Reader<Multiple> {
   }
 
   value() {
-    return this.readers.map(reader => reader.value());
+    return this.readers.map(reader => reader && reader.value());
   }
 
   get(key: Key): NestedReader {
     const nextReaders = this.readers.map(reader => reader.get(key));
     const nextRef = this.ref.get(key);
     return new NestedReader(nextReaders, nextRef);
+  }
+
+  valueLength () {
+    return this.readers.length;
   }
 
   _computeDump() {
@@ -827,6 +836,11 @@ export class BranchedReader<T extends boolean> extends Reader<T> {
       discriminator,
       rootIndex
     );
+  }
+
+  valueLength(): number {
+    if (typeof this.rootIndex === 'number') return -1;
+    return this.rootIndex.length 
   }
 
   get context() {

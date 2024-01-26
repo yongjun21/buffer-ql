@@ -39,13 +39,13 @@ export class LazyArray<T = any> {
   constructor(getter: Getter<T>, indexMap: Int32Array | number);
 
   constructor(
-    arr: Tuple<T extends any[] ? T : never>,
+    arr: Tuple<any[]>,
     indexMap: Int32Array | number,
     nullValue?: T extends any[] ? T : never
   );
 
   constructor(
-    arr: T extends Record<string, any> ? T : never,
+    arr: Record<string, any>,
     indexMap: Int32Array | number,
     nullValue?: T extends Record<string, any> ? T : never
   );

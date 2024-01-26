@@ -1,11 +1,13 @@
 import { NestedReader, BranchedReader } from './Readers.js';
-import { LazyArray } from './LazyArray.js';
+import { LazyArray, tuple } from './LazyArray.js';
 
 import { UsageError } from '../helpers/error.js';
 
 import type { Reader, Multiple } from './Readers.js';
 
-type ReaderApplyWhere = (reader: Reader<Multiple>) => Reader<Multiple>;
+type ReaderApplyWhere = (
+  reader: Reader<Multiple>
+) => Reader<Multiple> | Array<Reader<Multiple>>;
 
 export class ReaderApply<T extends Reader<Multiple> = Reader<Multiple>> {
   target: T;
@@ -93,7 +95,10 @@ export class ReaderApply<T extends Reader<Multiple> = Reader<Multiple>> {
   filter<V>(fn: (v: V, i: number) => any) {
     return {
       on: (where: ReaderApplyWhere = reader => reader) => {
-        const value = where(this.target).value<V>();
+        const _value = where(this.target);
+        const value = Array.isArray(_value)
+          ? wrapReaderValuesInTuple<V>(_value)
+          : _value.value<V>();
         if (value == null) return this.target;
         const filtered = value.filter(fn);
         return this._reindex(filtered.indexMap);
@@ -104,7 +109,10 @@ export class ReaderApply<T extends Reader<Multiple> = Reader<Multiple>> {
   sort<V>(fn: (a: V, b: V) => number) {
     return {
       on: (where: ReaderApplyWhere = reader => reader) => {
-        const value = where(this.target).value<V>();
+        const _value = where(this.target);
+        const value = Array.isArray(_value)
+          ? wrapReaderValuesInTuple<V>(_value)
+          : _value.value<V>();
         if (value == null) return this.target;
         const sorted = value.sort(fn);
         return this._reindex(sorted.indexMap);
@@ -115,7 +123,10 @@ export class ReaderApply<T extends Reader<Multiple> = Reader<Multiple>> {
   findAll<V>(target: LazyArray<V>, matchFn: (a: V, b: V) => boolean) {
     return {
       on: (where: ReaderApplyWhere = reader => reader) => {
-        const value = where(this.target).value<V>();
+        const _value = where(this.target);
+        const value = Array.isArray(_value)
+          ? wrapReaderValuesInTuple<V>(_value)
+          : _value.value<V>();
         if (value == null) return this.target;
         const matched = value.findAll(target, matchFn);
         return this._reindex(matched.indexMap);
@@ -127,9 +138,15 @@ export class ReaderApply<T extends Reader<Multiple> = Reader<Multiple>> {
     return {
       on: (where: ReaderApplyWhere = reader => reader) => {
         if (this.target instanceof NestedReader) {
-          const nextReaders = this.target.readers.filter(
-            reader => !where(reader).isUndefined()
-          );
+          const nextReaders = this.target.readers.filter(reader => {
+            const whereReader = where(reader) as Reader<Multiple>;
+            if (Array.isArray(whereReader)) {
+              throw new UsageError(
+                'apply.dropNull() cannot only be used on multiple branches concurrently'
+              );
+            }
+            return whereReader.isUndefined();
+          });
           return new NestedReader(nextReaders, this.target.ref);
         }
 
@@ -138,7 +155,12 @@ export class ReaderApply<T extends Reader<Multiple> = Reader<Multiple>> {
             ? this.target.rootIndex
             : this.target.currentIndex
         ) as Int32Array;
-        const whereReader = where(this.target);
+        const whereReader = where(this.target) as Reader<Multiple>;
+        if (Array.isArray(whereReader)) {
+          throw new UsageError(
+            'apply.dropNull() cannot only be used on multiple branches concurrently'
+          );
+        }
         const whereIndex = (
           whereReader instanceof BranchedReader
             ? whereReader.rootIndex
@@ -310,4 +332,9 @@ export class ReaderApplyForEach extends ReaderApply<NestedReader> {
       }
     };
   }
+}
+
+function wrapReaderValuesInTuple<T>(readers: Reader<Multiple>[]) {
+  const values = readers.map(reader => reader.value()!).filter(v => v != null);
+  return new LazyArray<T>(tuple(...values), values[0].length);
 }
