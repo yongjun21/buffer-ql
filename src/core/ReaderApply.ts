@@ -23,7 +23,7 @@ export class ReaderApply<T extends Reader<Multiple> = Reader<Multiple>> {
     return new ReaderApplyForEach(this.target);
   }
 
-  reverse() {
+  reverse(): Reader<Multiple> {
     if (this.target instanceof NestedReader) {
       const nextReaders = this.target.readers.reverse();
       return new NestedReader(nextReaders, this.target.ref);
@@ -40,7 +40,8 @@ export class ReaderApply<T extends Reader<Multiple> = Reader<Multiple>> {
     });
 
     if (this.target instanceof BranchedReader) {
-      const { branches, currentBranch, discriminator } = this.target;
+      const { branches, currentBranch, discriminator } = this
+        .target as BranchedReader<Multiple>;
       return new BranchedReader(
         branches,
         currentBranch,
@@ -59,7 +60,7 @@ export class ReaderApply<T extends Reader<Multiple> = Reader<Multiple>> {
     );
   }
 
-  slice(start?: number, end?: number) {
+  slice(start?: number, end?: number): Reader<Multiple> {
     if (this.target instanceof NestedReader) {
       const nextReaders = this.target.readers.slice(start, end);
       return new NestedReader(nextReaders, this.target.ref);
@@ -73,8 +74,49 @@ export class ReaderApply<T extends Reader<Multiple> = Reader<Multiple>> {
     const nextIndex = currentIndex.slice(start, end);
 
     if (this.target instanceof BranchedReader) {
-      const { branches, currentBranch, discriminator } = this.target;
+      const { branches, currentBranch, discriminator } = this
+        .target as BranchedReader<Multiple>;
       return new BranchedReader(
+        branches,
+        currentBranch,
+        discriminator,
+        nextIndex
+      );
+    }
+
+    const { typeName, currentOffset, currentLength } = this.target;
+    // @ts-ignore
+    return this.target._nextReader(
+      typeName,
+      currentOffset,
+      nextIndex,
+      currentLength
+    );
+  }
+
+  duplicate(copies = 2): Reader<Multiple> {
+    if (this.target instanceof NestedReader) {
+      const nextReaders = this.target.readers.duplicate(copies);
+      return new NestedReader(nextReaders, this.target.ref);
+    }
+
+    const currentIndex = (
+      this.target instanceof BranchedReader
+        ? this.target.rootIndex
+        : this.target.currentIndex
+    ) as Int32Array;
+    const n = currentIndex.length;
+    const nextIndex = new Int32Array(n * copies);
+    for (let i = 0; i < n; i++) {
+      for (let j = 0; j < copies; j++) {
+        nextIndex[i * copies + j] = currentIndex[i];
+      }
+    }
+
+    if (this.target instanceof BranchedReader) {
+      const { branches, currentBranch, discriminator } = this
+        .target as BranchedReader<Multiple>;
+      return new BranchedReader<Multiple>(
         branches,
         currentBranch,
         discriminator,
@@ -136,7 +178,7 @@ export class ReaderApply<T extends Reader<Multiple> = Reader<Multiple>> {
 
   dropNull() {
     return {
-      on: (where: ReaderApplyWhere = reader => reader) => {
+      on: (where: ReaderApplyWhere = reader => reader): Reader<Multiple> => {
         if (this.target instanceof NestedReader) {
           const nextReaders = this.target.readers.filter(reader => {
             const whereReader = where(reader) as Reader<Multiple>;
@@ -169,7 +211,8 @@ export class ReaderApply<T extends Reader<Multiple> = Reader<Multiple>> {
         const nextIndex = currentIndex.filter((_, i) => whereIndex[i] >= 0);
 
         if (this.target instanceof BranchedReader) {
-          const { branches, currentBranch, discriminator } = this.target;
+          const { branches, currentBranch, discriminator } = this
+            .target as BranchedReader<Multiple>;
           return new BranchedReader(
             branches,
             currentBranch,

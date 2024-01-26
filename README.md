@@ -452,6 +452,7 @@ const filteredTrackedEntities = trackedEntitiesReader
   - `.apply.dropNull().on()`
   - `.apply.reverse()`
   - `.apply.slice()`
+  - `.apply.duplicate()`
 - in cases where filtering is needed on a nested array, `.apply` should be followed by one or more `.forEach`
 
 ```js

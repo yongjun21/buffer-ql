@@ -229,6 +229,17 @@ export class LazyArray<T = any> {
     return new LazyArray(this._get, this.indexMap.slice(start, end));
   }
 
+  duplicate(copies = 2) {
+    const n = this.indexMap.length;
+    const indexMap = new Int32Array(n * copies);
+    for (let i = 0; i < n; i++) {
+      for (let j = 0; j < copies; j++) {
+        indexMap[i * copies + j] = this.indexMap[i];
+      }
+    }
+    return new LazyArray(this._get, indexMap);
+  }
+
   filter(fn: (v: T, i: number) => any) {
     const filtered = this.indexMap.filter((_, i) => fn(this.get(i), i));
     return new LazyArray(this._get, filtered);

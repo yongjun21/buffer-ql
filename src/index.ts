@@ -16,8 +16,14 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
+import type { Reader } from './core/Readers.js';
+
+type OneReader = Reader<true>;
+type ManyReader = Reader<false>;
+
+export type { OneReader, ManyReader };
+
 export { createReader, linkReaders, ALL_KEYS, ALL_VALUES } from './core/reader.js';
-export type { Reader } from './core/Readers.js';
 
 export { createEncoder } from './core/writer.js';
 
