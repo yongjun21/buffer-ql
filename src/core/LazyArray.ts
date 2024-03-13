@@ -258,10 +258,14 @@ export class LazyArray<T = any> {
       const start = stack.pop()!;
 
       if (start >= end) continue;
-      const pivotIndex = mapping[start];
+      const t = Math.random()
+      const r = Math.trunc((1 - t) * start + t * (end + 1))
+      const pivotIndex = mapping[r];
       const pivot = this.get(pivotIndex);
+      mapping[r] = mapping[start]
       let i = start;
       let j = end;
+
       let head = true;
       while (i < j) {
         if (head) {
